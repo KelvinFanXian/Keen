@@ -70,17 +70,13 @@ private struct FileNodeRow: View {
             .padding(.vertical, 4)
             .contentShape(Rectangle())
             .background(store.selectedDocument?.url == node.url ? Color.accentColor.opacity(0.15) : Color.clear)
-            .onTapGesture {
-                if node.isDirectory {
-                    expanded.toggle()
-                    if expanded { children = node.loadChildren(showHidden: store.showHiddenFiles) }
-                } else {
-                    store.openFile(node.url)
-                }
-            }
+            .gesture(rowGesture)
             .contextMenu {
                 Button("打开") {
                     if node.isDirectory { store.openFolder(node.url) } else { store.openFile(node.url) }
+                }
+                if !node.isDirectory {
+                    Button("固定打开") { store.openFile(node.url, pinned: true) }
                 }
                 Button("复制绝对路径") { copy(node.url.path) }
                 if let root = store.rootNode?.url,
@@ -101,6 +97,29 @@ private struct FileNodeRow: View {
         .onAppear {
             if expanded { children = node.loadChildren(showHidden: store.showHiddenFiles) }
         }
+    }
+
+    private var rowGesture: some Gesture {
+        TapGesture(count: 2)
+            .exclusively(before: TapGesture(count: 1))
+            .onEnded { value in
+                switch value {
+                case .first:
+                    if node.isDirectory {
+                        toggleDirectory()
+                    } else {
+                        store.openFile(node.url, pinned: true)
+                    }
+                case .second:
+                    if node.isDirectory { toggleDirectory() }
+                    else { store.openFile(node.url) }
+                }
+            }
+    }
+
+    private func toggleDirectory() {
+        expanded.toggle()
+        if expanded { children = node.loadChildren(showHidden: store.showHiddenFiles) }
     }
 
     private func copy(_ value: String) {

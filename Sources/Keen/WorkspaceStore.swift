@@ -8,13 +8,16 @@ final class WorkspaceStore: ObservableObject {
     @Published var rootNode: FileNode?
     @Published var openDocuments: [OpenDocument] = []
     @Published var selectedDocument: OpenDocument?
+    @Published private(set) var previewDocumentID: URL?
     @Published var renderedDocument: RenderedDocument?
     @Published var selectedHeadingID: String?
     @Published var showOutline = true
+    @Published var focusMode = false
     @Published var showHiddenFiles = false
     @Published var theme: ReadingTheme = .system
-    @Published var fontSize: Double = 16
-    @Published var readingWidth: Double = 900
+    @Published var readingStyle: ReadingStyle = .swiss
+    @Published var fontSize: Double = 15
+    @Published var readingWidth: Double = 860
     @Published var errorMessage: String?
     @Published var reloadToken = UUID()
 
@@ -54,11 +57,21 @@ final class WorkspaceStore: ObservableObject {
         defaults.set(url.path, forKey: "lastWorkspace")
     }
 
-    func openFile(_ url: URL, headingID: String? = nil) {
+    func openFile(_ url: URL, headingID: String? = nil, pinned: Bool = false) {
         guard ["md", "markdown"].contains(url.pathExtension.lowercased()) else { return }
         retainAccess(to: url)
         let document = OpenDocument(id: url, url: url)
-        if !openDocuments.contains(document) { openDocuments.append(document) }
+
+        if openDocuments.contains(document) {
+            if pinned { pin(document) }
+        } else if !pinned, let previewID = previewDocumentID,
+                  let previewIndex = openDocuments.firstIndex(where: { $0.id == previewID }) {
+            openDocuments[previewIndex] = document
+            previewDocumentID = document.id
+        } else {
+            openDocuments.append(document)
+            previewDocumentID = pinned ? previewDocumentID : document.id
+        }
         selectedDocument = document
         selectedHeadingID = nil
         load(document)
@@ -69,6 +82,7 @@ final class WorkspaceStore: ObservableObject {
     func close(_ document: OpenDocument) {
         guard let index = openDocuments.firstIndex(of: document) else { return }
         openDocuments.remove(at: index)
+        if previewDocumentID == document.id { previewDocumentID = nil }
         if selectedDocument == document {
             selectedDocument = openDocuments.indices.contains(index)
                 ? openDocuments[index]
@@ -77,6 +91,45 @@ final class WorkspaceStore: ObservableObject {
             else { renderedDocument = nil; watcher = nil }
         }
         persistTabs()
+    }
+
+    func pin(_ document: OpenDocument) {
+        if previewDocumentID == document.id {
+            previewDocumentID = nil
+            persistTabs()
+        }
+    }
+
+    func isPreview(_ document: OpenDocument) -> Bool {
+        previewDocumentID == document.id
+    }
+
+    func closeOthers(keeping document: OpenDocument) {
+        guard openDocuments.contains(document) else { return }
+        openDocuments = [document]
+        selectedDocument = document
+        previewDocumentID = nil
+        load(document)
+        persistTabs()
+    }
+
+    func closeToRight(of document: OpenDocument) {
+        guard let index = openDocuments.firstIndex(of: document), index + 1 < openDocuments.count else { return }
+        let removed = openDocuments[(index + 1)...]
+        if let selectedDocument, removed.contains(selectedDocument) {
+            self.selectedDocument = document
+            load(document)
+        }
+        if let previewDocumentID, removed.contains(where: { $0.id == previewDocumentID }) {
+            self.previewDocumentID = nil
+        }
+        openDocuments.removeSubrange((index + 1)...)
+        persistTabs()
+    }
+
+    func hasDocumentsToRight(of document: OpenDocument) -> Bool {
+        guard let index = openDocuments.firstIndex(of: document) else { return false }
+        return index + 1 < openDocuments.count
     }
 
     func select(_ document: OpenDocument) {
@@ -112,10 +165,11 @@ final class WorkspaceStore: ObservableObject {
         defaults.set(fontSize, forKey: "fontSize")
     }
 
-    func resetFontSize() { fontSize = 16; defaults.set(fontSize, forKey: "fontSize") }
+    func resetFontSize() { fontSize = 15; defaults.set(fontSize, forKey: "fontSize") }
 
     func persistPreferences() {
         defaults.set(theme.rawValue, forKey: "theme")
+        defaults.set(readingStyle.rawValue, forKey: "readingStyle")
         defaults.set(fontSize, forKey: "fontSize")
         defaults.set(readingWidth, forKey: "readingWidth")
         defaults.set(showHiddenFiles, forKey: "showHiddenFiles")
@@ -149,6 +203,13 @@ final class WorkspaceStore: ObservableObject {
 
     private func restorePreferences() {
         if let raw = defaults.string(forKey: "theme"), let value = ReadingTheme(rawValue: raw) { theme = value }
+        if defaults.integer(forKey: "readingStyleVersion") < 3 {
+            readingStyle = .swiss
+            defaults.set(readingStyle.rawValue, forKey: "readingStyle")
+            defaults.set(3, forKey: "readingStyleVersion")
+        } else if let raw = defaults.string(forKey: "readingStyle"), let value = ReadingStyle(rawValue: raw) {
+            readingStyle = value
+        }
         if defaults.object(forKey: "fontSize") != nil { fontSize = defaults.double(forKey: "fontSize") }
         if defaults.object(forKey: "readingWidth") != nil { readingWidth = defaults.double(forKey: "readingWidth") }
         showHiddenFiles = defaults.bool(forKey: "showHiddenFiles")
@@ -172,7 +233,7 @@ final class WorkspaceStore: ObservableObject {
     }
 
     private func persistTabs() {
-        defaults.set(openDocuments.map(\.url.path), forKey: "openTabs")
+        defaults.set(openDocuments.filter { $0.id != previewDocumentID }.map(\.url.path), forKey: "openTabs")
     }
 
     private func retainAccess(to url: URL) {

@@ -34,9 +34,19 @@ import Testing
     - [ ] 搜索
     """
     let result = MarkdownRenderer().render(source: source, baseURL: URL(fileURLWithPath: "/tmp/docs"))
-    #expect(result.html.contains("<table>"))
+    #expect(result.html.contains("class=\"table-wrap\""))
+    #expect(result.html.contains("<table class=\"columns-2\">"))
     #expect(result.html.contains("<ul class=\"task-list\">"))
     #expect(result.html.contains("type=\"checkbox\" checked"))
+}
+
+@Test func includesMarkedInspiredReadingStyles() {
+    let result = MarkdownRenderer().render(source: "# 阅读", baseURL: URL(fileURLWithPath: "/tmp/docs"))
+    #expect(result.html.contains("data-style='ink'"))
+    #expect(result.html.contains("data-style='manuscript'"))
+    #expect(result.html.contains("data-style='everforest-light'"))
+    #expect(result.html.contains("--bg:#fdf6e3"))
+    #expect(result.html.contains("window.keenConfigure=(theme,style,size,width)"))
 }
 
 @Test func blocksRemoteAndTraversingImages() {
@@ -61,6 +71,8 @@ import Testing
     #expect(diagram.html.contains("class=\"mermaid-shell\""))
     #expect(diagram.html.contains("securityLevel: 'strict'"))
     #expect(diagram.html.contains("keenMermaidZoom"))
+    #expect(diagram.html.contains("svg.viewBox?.baseVal"))
+    #expect(diagram.html.contains("Math.min(1, (viewport.clientWidth - 8) / naturalWidth)"))
 }
 
 @Test func resolvesMarkdownLinksAndAnchors() throws {

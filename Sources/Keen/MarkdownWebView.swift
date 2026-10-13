@@ -7,6 +7,7 @@ struct MarkdownWebView: NSViewRepresentable {
     let sourceURL: URL
     let baseURL: URL
     let theme: ReadingTheme
+    let readingStyle: ReadingStyle
     let fontSize: Double
     let readingWidth: Double
     let reloadToken: UUID
@@ -45,7 +46,8 @@ struct MarkdownWebView: NSViewRepresentable {
             context.coordinator.loadedSourceURL = sourceURL
             webView.loadHTMLString(document.html, baseURL: baseURL)
         }
-        let js = "window.keenConfigure('\(theme.rawValue)', \(fontSize), \(readingWidth));"
+        let js = "window.keenConfigure('\(theme.rawValue)', '\(readingStyle.rawValue)', \(fontSize), \(readingWidth));"
+        context.coordinator.configurationScript = js
         webView.evaluateJavaScript(js)
         if context.coordinator.lastRequestedHeading != selectedHeadingID, let id = selectedHeadingID {
             context.coordinator.lastRequestedHeading = id
@@ -68,6 +70,7 @@ struct MarkdownWebView: NSViewRepresentable {
         var loadedSourceURL: URL?
         var lastRequestedHeading: String?
         var pendingHeadingID: String?
+        var configurationScript = "window.keenConfigure('system', 'swiss', 15, 860);"
         private var savedHeading: String?
         private var savedOffset: Double = 0
 
@@ -84,7 +87,7 @@ struct MarkdownWebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            webView.evaluateJavaScript("window.keenConfigure('system', 16, 900)")
+            webView.evaluateJavaScript(configurationScript)
             if let targetHeading = pendingHeadingID ?? savedHeading ?? selectedHeadingID {
                 let encoded = targetHeading.replacingOccurrences(of: "'", with: "\\'")
                 webView.evaluateJavaScript("window.keenScrollTo('\(encoded)'); window.scrollBy(0, \(savedOffset));")

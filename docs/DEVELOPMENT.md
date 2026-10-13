@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | Phase 1 初始化 | 已完成 | 工程、模块、窗口、Debug/Release 构建和 App 启动均已验证 |
 | Phase 2 核心 MVP | 进行中 | 文件树、Markdown 阅读、大纲、路径复制和可运行 App 已完成基础版，待真实项目交互验收 |
-| Phase 3 阅读体验 | 进行中 | Mermaid、本地文档链接和首轮 UI 精修已完成；搜索、高亮、KaTeX 和图片查看待实现 |
+| Phase 3 阅读体验 | 进行中 | Mermaid、本地文档链接、Marked 3 风格阅读版式和首轮 UI 精修已完成；搜索、高亮、KaTeX 和图片查看待实现 |
 | Phase 4 Agent 文档协作 | 未开始 | 已有基础监听，原子替换和阅读位置仍需强化 |
 | Phase 5 质量优化 | 未开始 | 性能、长文档、频繁修改和 Release 验收待执行 |
 
@@ -18,13 +18,17 @@
 - Swift Package 原生 macOS 应用骨架，最低 macOS 15。
 - SwiftUI 三栏界面、原生工具栏和设置窗口。
 - 文件夹懒加载和 Markdown 文件过滤。
-- 多标签打开、选择和关闭。
+- VS Code 式预览标签：单击预览、双击固定，并支持关闭其它与关闭右侧。
 - `swift-markdown` AST 解析、HTML 转义和 WKWebView 渲染。
 - AST 标题 source range 生成大纲和源码行号。
 - 大纲点击跳转、正文滚动章节同步、章节位置复制。
 - Mermaid 11.17.2 本地按需加载、严格安全模式、适应宽度、缩放、平移和错误降级。
 - 文档内相对 Markdown 链接、中文文件名、无扩展名链接、目录 README 和章节锚点跳转。
 - UI Walk 样本文档、三栏高度自适应、精简空状态和阅读排版细节。
+- Everforest Light、Swiss、Ink、Manuscript 四套样式；正文保持舒适行宽，宽表格按阅读视口展开。
+- Everforest Light 使用宽幅统一内容轴、奶油色背景、蓝灰正文、绿色链接和琥珀色行内代码。
+- 默认回归 Marked 3 Swiss 取向；Mermaid 保持自然尺寸并左对齐，仅在超出视口时缩小。
+- Marked 3 风格紧凑表格：常见五列表格列宽优化、纯色表体和专注阅读模式。
 - 文件事件监听、防抖和基本自动刷新。
 - 本地 `.app` 打包、ad-hoc/开发证书签名和签名校验。
 - 原创 Keen 图标接入资源。
@@ -48,7 +52,7 @@
 ## 验证记录
 
 - `make build`：通过。
-- `make test`：4 项测试通过，0 项失败。
+- `make test`：7 项测试通过，0 项失败。
 - `make app`：Release 构建、AppIcon 资产编译、ad-hoc 签名和签名校验通过。
 - `.build/app/Keen.app`：成功启动并持续运行超过 20 秒。
 - 真实项目内的视觉与交互验收尚未完成，详见 `docs/TEST_REPORT.md`。

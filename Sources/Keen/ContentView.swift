@@ -7,9 +7,11 @@ struct ContentView: View {
 
     var body: some View {
         HSplitView {
-            ExplorerView()
-                .environmentObject(store)
-                .frame(minWidth: 190, idealWidth: 240, maxWidth: 360)
+            if !store.focusMode {
+                ExplorerView()
+                    .environmentObject(store)
+                    .frame(minWidth: 190, idealWidth: 240, maxWidth: 360)
+            }
 
             VStack(spacing: 0) {
                 TabBarView()
@@ -19,7 +21,7 @@ struct ContentView: View {
             }
             .frame(minWidth: 500)
 
-            if store.showOutline {
+            if store.showOutline && !store.focusMode {
                 OutlineView()
                     .environmentObject(store)
                     .frame(minWidth: 190, idealWidth: 240, maxWidth: 320)
@@ -37,6 +39,9 @@ struct ContentView: View {
                 }
                 Button { store.showOutline.toggle() } label: {
                     Label("大纲", systemImage: "list.bullet.indent")
+                }
+                Button { store.focusMode.toggle() } label: {
+                    Label(store.focusMode ? "退出专注阅读" : "专注阅读", systemImage: store.focusMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                 }
             }
         }
@@ -65,6 +70,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: store.theme) { _, _ in store.persistPreferences() }
+        .onChange(of: store.readingStyle) { _, _ in store.persistPreferences() }
         .onChange(of: store.fontSize) { _, _ in store.persistPreferences() }
         .onChange(of: store.readingWidth) { _, _ in store.persistPreferences() }
         .onChange(of: store.showHiddenFiles) { _, _ in store.persistPreferences() }
@@ -75,25 +81,95 @@ struct ContentView: View {
         if let message = store.errorMessage {
             ContentUnavailableView("无法读取文档", systemImage: "exclamationmark.triangle", description: Text(message))
         } else if let rendered = store.renderedDocument, let document = store.selectedDocument {
-            MarkdownWebView(
-                document: rendered,
-                sourceURL: document.url,
-                baseURL: document.url.deletingLastPathComponent(),
-                theme: store.theme,
-                fontSize: store.fontSize,
-                readingWidth: store.readingWidth,
-                reloadToken: store.reloadToken,
-                selectedHeadingID: $store.selectedHeadingID,
-                openLocalMarkdown: { url, headingID in
-                    store.openFile(url, headingID: headingID)
-                }
-            )
+            VStack(spacing: 0) {
+                MarkdownWebView(
+                    document: rendered,
+                    sourceURL: document.url,
+                    baseURL: document.url.deletingLastPathComponent(),
+                    theme: store.theme,
+                    readingStyle: store.readingStyle,
+                    fontSize: store.fontSize,
+                    readingWidth: store.readingWidth,
+                    reloadToken: store.reloadToken,
+                    selectedHeadingID: $store.selectedHeadingID,
+                    openLocalMarkdown: { url, headingID in
+                        store.openFile(url, headingID: headingID)
+                    }
+                )
+                Divider()
+                ReaderStatusBar(document: document)
+                    .environmentObject(store)
+            }
         } else {
             EmptyReaderView(
                 openFile: store.chooseFile,
                 openFolder: store.chooseFolder
             )
         }
+    }
+}
+
+private struct ReaderStatusBar: View {
+    @EnvironmentObject private var store: WorkspaceStore
+    let document: OpenDocument
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Menu {
+                ForEach(ReadingStyle.allCases) { style in
+                    Button {
+                        store.readingStyle = style
+                    } label: {
+                        if store.readingStyle == style {
+                            Label(style.label, systemImage: "checkmark")
+                        } else {
+                            Text(style.label)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "textformat")
+                    Text(store.readingStyle.label)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                }
+                .frame(minWidth: 82, alignment: .leading)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help(store.readingStyle.description)
+
+            Divider().frame(height: 14)
+
+            Button { store.adjustFontSize(by: -1) } label: {
+                Image(systemName: "textformat.size.smaller")
+            }
+            .buttonStyle(.borderless)
+            .help("减小字号")
+
+            Text("\(Int(store.fontSize))")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 20)
+
+            Button { store.adjustFontSize(by: 1) } label: {
+                Image(systemName: "textformat.size.larger")
+            }
+            .buttonStyle(.borderless)
+            .help("增大字号")
+
+            Spacer()
+
+            Text(document.url.lastPathComponent)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(.tertiary)
+        }
+        .font(.system(size: 11))
+        .padding(.horizontal, 10)
+        .frame(height: 28)
+        .background(.bar)
     }
 }
 
@@ -151,7 +227,10 @@ private struct TabBarView: View {
                     HStack(spacing: 2) {
                         ForEach(store.openDocuments) { document in
                             HStack(spacing: 6) {
-                                Button(document.title) { store.select(document) }
+                                Button { store.select(document) } label: {
+                                    Text(document.title)
+                                        .italic(store.isPreview(document))
+                                }
                                     .buttonStyle(.plain)
                                     .lineLimit(1)
                                 Button { store.close(document) } label: {
@@ -165,6 +244,20 @@ private struct TabBarView: View {
                             .background(store.selectedDocument == document ? Color.accentColor.opacity(0.13) : Color.clear)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .id(document.id)
+                            .simultaneousGesture(
+                                TapGesture(count: 2).onEnded { store.pin(document) }
+                            )
+                            .contextMenu {
+                                if store.isPreview(document) {
+                                    Button("固定标签") { store.pin(document) }
+                                    Divider()
+                                }
+                                Button("关闭") { store.close(document) }
+                                Button("关闭其它") { store.closeOthers(keeping: document) }
+                                    .disabled(store.openDocuments.count <= 1)
+                                Button("关闭右侧") { store.closeToRight(of: document) }
+                                    .disabled(!store.hasDocumentsToRight(of: document))
+                            }
                         }
                     }
                     .padding(.horizontal, 8)
@@ -191,6 +284,9 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
+            Picker("阅读样式", selection: $store.readingStyle) {
+                ForEach(ReadingStyle.allCases) { style in Text(style.label).tag(style) }
+            }
             Picker("外观", selection: $store.theme) {
                 ForEach(ReadingTheme.allCases) { theme in Text(theme.label).tag(theme) }
             }

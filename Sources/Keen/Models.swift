@@ -75,3 +75,28 @@ enum ReadingTheme: String, CaseIterable, Identifiable {
         }
     }
 }
+
+enum ReadingStyle: String, CaseIterable, Identifiable {
+    case everforestLight = "everforest-light"
+    case swiss, ink, manuscript
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .everforestLight: "Everforest Light"
+        case .swiss: "Swiss"
+        case .ink: "Ink"
+        case .manuscript: "Manuscript"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .everforestLight: "温暖、低对比度的宽幅技术文档排版"
+        case .swiss: "清晰、克制的现代排版"
+        case .ink: "更紧凑的技术文档排版"
+        case .manuscript: "适合长文阅读的衬线排版"
+        }
+    }
+}

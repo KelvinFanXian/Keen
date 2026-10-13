@@ -46,6 +46,10 @@ private struct KeenCommands: Commands {
             Button("恢复默认字号") { store.resetFontSize() }
                 .keyboardShortcut("0")
             Divider()
+            Button(store.focusMode ? "退出专注阅读" : "专注阅读") {
+                store.focusMode.toggle()
+            }
+            .keyboardShortcut("f", modifiers: [.command, .option])
             Button(store.showOutline ? "隐藏大纲" : "显示大纲") {
                 store.showOutline.toggle()
             }
