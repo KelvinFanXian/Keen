@@ -49,6 +49,21 @@ import Testing
     #expect(result.html.contains("window.keenConfigure=(theme,style,size,width)"))
 }
 
+@Test func appliesHistoryWidthsOnlyToMatchingTable() {
+    let source = """
+    | 时间 | 版本 | 描述 | 作者 | 审核人 |
+    | --- | --- | --- | --- | --- |
+    | 2026-10-13 15:49:57 | 0.1 | 建档 | 范显 | |
+
+    | 日期 | 编号 | 标题 | 状态 | 记录 |
+    | --- | --- | --- | --- | --- |
+    | 2026-10-13 | G:B43 | 标题 | 处理中 | 记录.md |
+    """
+    let result = MarkdownRenderer().render(source: source, baseURL: URL(fileURLWithPath: "/tmp/docs"))
+    #expect(result.html.components(separatedBy: "<table class=\"columns-5 history-table\">").count == 2)
+    #expect(result.html.contains("class=\"columns-5\"><thead><tr><th>日期</th>"))
+}
+
 @Test func blocksRemoteAndTraversingImages() {
     let source = """
     ![remote](https://example.com/a.png)

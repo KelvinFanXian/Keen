@@ -94,6 +94,8 @@ struct MarkdownWebView: NSViewRepresentable {
                 self.savedHeading = nil
                 self.pendingHeadingID = nil
                 self.lastRequestedHeading = targetHeading
+            } else {
+                webView.evaluateJavaScript("window.scrollTo(0, 0)")
             }
         }
 
@@ -121,7 +123,8 @@ struct MarkdownWebView: NSViewRepresentable {
 
         func capturePosition() {
             savedHeading = selectedHeadingID
-            webView?.evaluateJavaScript("window.scrollY") { [weak self] value, _ in
+            let id = selectedHeadingID?.replacingOccurrences(of: "'", with: "\\'") ?? ""
+            webView?.evaluateJavaScript("window.scrollY - (document.getElementById('\(id)')?.offsetTop || 0)") { [weak self] value, _ in
                 self?.savedOffset = value as? Double ?? 0
             }
         }
