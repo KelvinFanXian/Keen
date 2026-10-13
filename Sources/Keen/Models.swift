@@ -60,6 +60,39 @@ final class FileNode: Identifiable, Hashable {
         return loaded
     }
 
+    func reloadChildren(showHidden: Bool) -> [FileNode] {
+        children = nil
+        return loadChildren(showHidden: showHidden)
+    }
+
+    func searchMarkdownFiles(matching query: String, showHidden: Bool) -> [FileNode] {
+        guard isDirectory else { return [] }
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return [] }
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isHiddenKey]
+        let options: FileManager.DirectoryEnumerationOptions = showHidden
+            ? [.skipsPackageDescendants]
+            : [.skipsPackageDescendants, .skipsHiddenFiles]
+        guard let enumerator = FileManager.default.enumerator(
+            at: url,
+            includingPropertiesForKeys: keys,
+            options: options
+        ) else { return [] }
+
+        var matches: [FileNode] = []
+        for case let child as URL in enumerator {
+            let values = try? child.resourceValues(forKeys: Set(keys))
+            if !showHidden && (values?.isHidden == true || child.lastPathComponent.hasPrefix(".")) { continue }
+            guard values?.isRegularFile == true,
+                  ["md", "markdown"].contains(child.pathExtension.lowercased()),
+                  child.deletingPathExtension().lastPathComponent.localizedCaseInsensitiveContains(needle)
+            else { continue }
+            matches.append(FileNode(url: child, isDirectory: false))
+            if matches.count == 200 { break }
+        }
+        return matches.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
     static func == (lhs: FileNode, rhs: FileNode) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }

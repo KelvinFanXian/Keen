@@ -11,6 +11,7 @@ final class WorkspaceStore: ObservableObject {
     @Published private(set) var previewDocumentID: URL?
     @Published var renderedDocument: RenderedDocument?
     @Published var selectedHeadingID: String?
+    @Published var showExplorer = true
     @Published var showOutline = true
     @Published var focusMode = false
     @Published var showHiddenFiles = false
@@ -143,6 +144,15 @@ final class WorkspaceStore: ObservableObject {
         load(document, preservePosition: true)
     }
 
+    func handleSelectedFileChange() {
+        guard let document = selectedDocument else { return }
+        if FileManager.default.fileExists(atPath: document.url.path) {
+            load(document, preservePosition: true)
+        } else {
+            close(document)
+        }
+    }
+
     func copyCurrentFilePath() {
         guard let path = selectedDocument?.url.path else { return }
         NSPasteboard.general.clearContents()
@@ -172,6 +182,7 @@ final class WorkspaceStore: ObservableObject {
         defaults.set(readingStyle.rawValue, forKey: "readingStyle")
         defaults.set(fontSize, forKey: "fontSize")
         defaults.set(readingWidth, forKey: "readingWidth")
+        defaults.set(showExplorer, forKey: "showExplorer")
         defaults.set(showHiddenFiles, forKey: "showHiddenFiles")
     }
 
@@ -192,7 +203,7 @@ final class WorkspaceStore: ObservableObject {
             errorMessage = nil
             reloadToken = UUID()
             watcher = FileWatcher(url: document.url) { [weak self] in
-                Task { @MainActor in self?.refresh() }
+                Task { @MainActor in self?.handleSelectedFileChange() }
             }
             defaults.set(document.url.path, forKey: "lastFile")
         } catch {
@@ -212,6 +223,7 @@ final class WorkspaceStore: ObservableObject {
         }
         if defaults.object(forKey: "fontSize") != nil { fontSize = defaults.double(forKey: "fontSize") }
         if defaults.object(forKey: "readingWidth") != nil { readingWidth = defaults.double(forKey: "readingWidth") }
+        if defaults.object(forKey: "showExplorer") != nil { showExplorer = defaults.bool(forKey: "showExplorer") }
         showHiddenFiles = defaults.bool(forKey: "showHiddenFiles")
     }
 
@@ -226,7 +238,17 @@ final class WorkspaceStore: ObservableObject {
             openDocuments.append(document)
         }
         if let lastPath = defaults.string(forKey: "lastFile"),
-           let document = openDocuments.first(where: { $0.url.path == lastPath }) {
+           FileManager.default.fileExists(atPath: lastPath) {
+            let url = URL(fileURLWithPath: lastPath)
+            let document = openDocuments.first(where: { $0.url.path == lastPath })
+                ?? OpenDocument(id: url, url: url)
+            if !openDocuments.contains(document) {
+                openDocuments.append(document)
+                previewDocumentID = document.id
+            }
+            selectedDocument = document
+            load(document)
+        } else if let document = openDocuments.last {
             selectedDocument = document
             load(document)
         }

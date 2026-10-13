@@ -30,7 +30,7 @@ KeenApp
 4. `MarkdownWebView` 以文档目录为基准加载 HTML，解析相对图片。
 5. JavaScript 只负责阅读视图内部行为：章节观察、平滑跳转、排版配置和复制代码。
 6. `WKScriptMessageHandler` 将当前章节回传给 SwiftUI 大纲。
-7. `FileWatcher` 接收文件系统事件，防抖后触发重新读取和渲染。
+7. `FileWatcher` 接收文件与已显示目录的文件系统事件，防抖后触发重新读取、目录缓存失效和渲染；删除当前文件时同步关闭失效标签。
 
 ## 安全边界
 

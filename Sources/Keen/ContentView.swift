@@ -7,7 +7,7 @@ struct ContentView: View {
 
     var body: some View {
         HSplitView {
-            if !store.focusMode {
+            if store.showExplorer && !store.focusMode {
                 ExplorerView()
                     .environmentObject(store)
                     .frame(minWidth: 190, idealWidth: 240, maxWidth: 360)
@@ -30,19 +30,25 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(store.selectedDocument?.title ?? "Keen")
         .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Button { store.showExplorer.toggle() } label: {
+                    Image(systemName: "sidebar.left")
+                }
+                .help(store.showExplorer ? "隐藏文件侧栏" : "显示文件侧栏")
+            }
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { store.chooseFile() } label: {
-                    Label("打开文件", systemImage: "doc")
+                    Image(systemName: "doc.badge.plus")
                 }
-                Button { store.chooseFolder() } label: {
-                    Label("打开文件夹", systemImage: "folder")
-                }
+                .help("打开文件")
                 Button { store.showOutline.toggle() } label: {
-                    Label("大纲", systemImage: "list.bullet.indent")
+                    Image(systemName: "list.bullet.indent")
                 }
+                .help(store.showOutline ? "隐藏大纲" : "显示大纲")
                 Button { store.focusMode.toggle() } label: {
-                    Label(store.focusMode ? "退出专注阅读" : "专注阅读", systemImage: store.focusMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    Image(systemName: store.focusMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                 }
+                .help(store.focusMode ? "退出专注阅读" : "专注阅读")
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
@@ -73,6 +79,7 @@ struct ContentView: View {
         .onChange(of: store.readingStyle) { _, _ in store.persistPreferences() }
         .onChange(of: store.fontSize) { _, _ in store.persistPreferences() }
         .onChange(of: store.readingWidth) { _, _ in store.persistPreferences() }
+        .onChange(of: store.showExplorer) { _, _ in store.persistPreferences() }
         .onChange(of: store.showHiddenFiles) { _, _ in store.persistPreferences() }
     }
 

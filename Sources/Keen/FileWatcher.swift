@@ -23,18 +23,21 @@ final class FileWatcher: @unchecked Sendable {
             eventMask: [.write, .rename, .delete, .extend, .attrib],
             queue: DispatchQueue.global(qos: .utility)
         )
-        source.setEventHandler { [weak self] in self?.scheduleRefresh() }
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.scheduleRefresh(events: self.source?.data ?? [])
+        }
         source.setCancelHandler { [descriptor] in close(descriptor) }
         self.source = source
         source.resume()
     }
 
-    private func scheduleRefresh() {
+    private func scheduleRefresh(events: DispatchSource.FileSystemEvent) {
         pending?.cancel()
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
             self.callback()
-            if self.source?.data.contains(.rename) == true || self.source?.data.contains(.delete) == true {
+            if events.contains(.rename) || events.contains(.delete) {
                 self.stop()
                 DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.start() }
             }

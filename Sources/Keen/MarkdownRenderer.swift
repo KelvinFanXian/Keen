@@ -79,7 +79,7 @@ struct MarkdownRenderer {
         html[data-style='swiss'] .table-wrap { margin:1.5rem 0; }
         html[data-style='everforest-light'] td code { padding:.06em .25em; color:#d69900; background:#f3ead3; }
         html[data-style='everforest-light'] a { color:#35a77c; }
-        table.history-table { width:auto; table-layout:auto; }
+        html[data-style='swiss'] table.history-table,table.history-table { width:100%; table-layout:auto; }
         table.history-table th:nth-child(1),table.history-table td:nth-child(1) { min-width:180px; overflow-wrap:normal; word-break:normal; }
         table.history-table th:nth-child(2),table.history-table td:nth-child(2) { min-width:70px; }
         table.history-table th:nth-last-child(2),table.history-table td:nth-last-child(2) { min-width:72px; text-align:center; }

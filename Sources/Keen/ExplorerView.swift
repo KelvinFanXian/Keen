@@ -3,25 +3,40 @@ import SwiftUI
 
 struct ExplorerView: View {
     @EnvironmentObject private var store: WorkspaceStore
+    @State private var searchText = ""
+    @State private var searchResults: [FileNode] = []
+    @State private var searchTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("文件")
-                    .font(.headline)
-                Spacer()
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("搜索文件", text: $searchText)
+                    .textFieldStyle(.plain)
                 Button { store.chooseFolder() } label: { Image(systemName: "folder.badge.plus") }
                     .buttonStyle(.borderless)
                     .help("打开文件夹")
             }
-            .padding(12)
+            .padding(.horizontal, 10)
+            .frame(height: 39)
             Divider()
 
             if let root = store.rootNode {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 1) {
-                        FileNodeRow(node: root, depth: 0, initiallyExpanded: true)
-                            .environmentObject(store)
+                        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            FileNodeRow(node: root, depth: 0, initiallyExpanded: true)
+                                .environmentObject(store)
+                        } else if searchResults.isEmpty {
+                            ContentUnavailableView.search(text: searchText)
+                                .padding(.top, 24)
+                        } else {
+                            ForEach(searchResults) { result in
+                                FileNodeRow(node: result, depth: 0)
+                                    .environmentObject(store)
+                            }
+                        }
                     }
                     .padding(.vertical, 6)
                 }
@@ -30,6 +45,24 @@ struct ExplorerView: View {
             }
         }
         .background(Color(nsColor: .controlBackgroundColor))
+        .onChange(of: searchText) { _, query in scheduleSearch(query) }
+        .onChange(of: store.showHiddenFiles) { _, _ in scheduleSearch(searchText) }
+        .onChange(of: store.rootNode?.id) { _, _ in scheduleSearch(searchText) }
+        .onDisappear { searchTask?.cancel() }
+    }
+
+    private func scheduleSearch(_ query: String) {
+        searchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let root = store.rootNode else {
+            searchResults = []
+            return
+        }
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled else { return }
+            searchResults = root.searchMarkdownFiles(matching: trimmed, showHidden: store.showHiddenFiles)
+        }
     }
 }
 
@@ -39,6 +72,7 @@ private struct FileNodeRow: View {
     let depth: Int
     @State private var expanded: Bool
     @State private var children: [FileNode] = []
+    @State private var watcher: FileWatcher?
 
     init(node: FileNode, depth: Int, initiallyExpanded: Bool = false) {
         self.node = node
@@ -96,7 +130,10 @@ private struct FileNodeRow: View {
         }
         .onAppear {
             if expanded { children = node.loadChildren(showHidden: store.showHiddenFiles) }
+            watchDirectory()
         }
+        .onChange(of: store.showHiddenFiles) { _, _ in reloadDirectory() }
+        .onDisappear { watcher = nil }
     }
 
     private var rowGesture: some Gesture {
@@ -120,6 +157,18 @@ private struct FileNodeRow: View {
     private func toggleDirectory() {
         expanded.toggle()
         if expanded { children = node.loadChildren(showHidden: store.showHiddenFiles) }
+    }
+
+    private func watchDirectory() {
+        guard node.isDirectory else { return }
+        watcher = FileWatcher(url: node.url) {
+            Task { @MainActor in reloadDirectory() }
+        }
+    }
+
+    private func reloadDirectory() {
+        guard node.isDirectory else { return }
+        children = node.reloadChildren(showHidden: store.showHiddenFiles)
     }
 
     private func copy(_ value: String) {

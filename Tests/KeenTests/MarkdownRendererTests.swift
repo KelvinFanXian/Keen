@@ -62,6 +62,7 @@ import Testing
     let result = MarkdownRenderer().render(source: source, baseURL: URL(fileURLWithPath: "/tmp/docs"))
     #expect(result.html.components(separatedBy: "<table class=\"columns-5 history-table\">").count == 2)
     #expect(result.html.contains("class=\"columns-5\"><thead><tr><th>日期</th>"))
+    #expect(result.html.contains("html[data-style='swiss'] table.history-table,table.history-table { width:100%; table-layout:auto; }"))
 }
 
 @Test func blocksRemoteAndTraversingImages() {

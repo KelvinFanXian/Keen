@@ -53,6 +53,10 @@ private struct KeenCommands: Commands {
             Button(store.showOutline ? "隐藏大纲" : "显示大纲") {
                 store.showOutline.toggle()
             }
+            Button(store.showExplorer ? "隐藏文件侧栏" : "显示文件侧栏") {
+                store.showExplorer.toggle()
+            }
+            .keyboardShortcut("0", modifiers: [.command, .shift])
         }
     }
 }
