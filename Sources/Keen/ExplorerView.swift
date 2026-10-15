@@ -109,29 +109,12 @@ private struct WorkspaceMenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("工作区")
-                    .font(.system(size: 15, weight: .semibold))
-                Spacer()
-                Button { isPresented = false } label: {
-                    Image(systemName: "xmark.circle")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("关闭")
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 42)
-
-            Divider()
-
             Text("操作")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 4)
+                .padding(.horizontal, 12)
+                .padding(.top, 11)
+                .padding(.bottom, 3)
 
             WorkspaceActionRow(title: "打开文件夹…", systemImage: "folder.badge.plus") {
                 isPresented = false
@@ -148,20 +131,20 @@ private struct WorkspaceMenuView: View {
             }
             .disabled(store.rootNode == nil)
 
-            Divider().padding(.vertical, 7)
+            Divider().padding(.vertical, 5)
 
             Text("最近使用的目录")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.bottom, 5)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 3)
 
             if store.recentWorkspaces.isEmpty {
                 Text("暂无记录")
                     .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
             } else {
                 ForEach(store.recentWorkspaces, id: \.self) { url in
                     RecentWorkspaceRow(
@@ -178,8 +161,8 @@ private struct WorkspaceMenuView: View {
                 }
             }
         }
-        .padding(.bottom, 9)
-        .frame(width: 330)
+        .padding(.bottom, 6)
+        .frame(width: 292)
     }
 }
 
@@ -194,8 +177,8 @@ private struct WorkspaceActionRow: View {
             Label(title, systemImage: systemImage)
                 .font(.system(size: 13))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .frame(height: 31)
+                .padding(.horizontal, 12)
+                .frame(height: 28)
                 .contentShape(Rectangle())
                 .background(isHovered ? Color.primary.opacity(0.055) : Color.clear)
         }
@@ -236,6 +219,7 @@ private struct RecentWorkspaceRow: View {
                         .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
                 .foregroundStyle(isPinned ? Color.accentColor : .secondary)
                 .help(isPinned ? "取消固定" : "固定")
 
@@ -244,6 +228,7 @@ private struct RecentWorkspaceRow: View {
                         .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
                 .foregroundStyle(.secondary)
                 .help("从最近目录移除")
             } else if isCurrent {
@@ -251,8 +236,8 @@ private struct RecentWorkspaceRow: View {
                     .padding(.horizontal, 6)
             }
         }
-        .padding(.horizontal, 14)
-        .frame(height: 34)
+        .padding(.horizontal, 12)
+        .frame(height: 31)
         .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
