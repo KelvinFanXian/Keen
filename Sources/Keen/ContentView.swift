@@ -120,7 +120,9 @@ struct ContentView: View {
     private var reader: some View {
         if let message = store.errorMessage {
             ContentUnavailableView("无法读取文档", systemImage: "exclamationmark.triangle", description: Text(message))
-        } else if let rendered = store.renderedDocument, let document = store.selectedDocument {
+        } else if let rendered = store.renderedDocument,
+                  let document = store.selectedDocument,
+                  store.renderedDocumentURL == document.url.standardizedFileURL {
             VStack(spacing: 0) {
                 if store.showFindBar {
                     PageFindBar(
@@ -153,6 +155,8 @@ struct ContentView: View {
                 ReaderStatusBar(document: document)
                     .environmentObject(store)
             }
+        } else if let document = store.selectedDocument {
+            DocumentLoadingView(title: document.title)
         } else {
             EmptyReaderView(
                 openFile: store.chooseFile,
@@ -171,6 +175,33 @@ struct ContentView: View {
             guard store.showFindBar else { return }
             findFieldFocused = true
         }
+    }
+}
+
+private struct DocumentLoadingView: View {
+    let title: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(title)
+                .font(.system(size: 30, weight: .bold))
+                .lineLimit(1)
+            ForEach([0.92, 0.76, 0.84, 0.58], id: \.self) { width in
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.secondary.opacity(0.12))
+                    .frame(maxWidth: 760 * width)
+                    .frame(height: 14)
+            }
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.secondary.opacity(0.08))
+                .frame(maxWidth: 760, minHeight: 150)
+            Spacer()
+        }
+        .padding(.horizontal, 48)
+        .padding(.top, 42)
+        .frame(maxWidth: 860, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity)
+        .transition(.opacity)
     }
 }
 

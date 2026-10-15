@@ -3,6 +3,16 @@ import Combine
 import Foundation
 import UniformTypeIdentifiers
 
+private struct CachedRender {
+    let document: RenderedDocument
+    let modificationDate: Date?
+}
+
+private enum DocumentLoadResult: Sendable {
+    case success(RenderedDocument, Date?)
+    case failure(String)
+}
+
 @MainActor
 final class WorkspaceStore: ObservableObject {
     @Published var rootNode: FileNode?
@@ -10,6 +20,7 @@ final class WorkspaceStore: ObservableObject {
     @Published var selectedDocument: OpenDocument?
     @Published private(set) var previewDocumentID: URL?
     @Published var renderedDocument: RenderedDocument?
+    @Published private(set) var renderedDocumentURL: URL?
     @Published var selectedHeadingID: String?
     @Published var showExplorer = true
     @Published var showOutline = true
@@ -31,13 +42,15 @@ final class WorkspaceStore: ObservableObject {
     @Published var showWorkspaceSearch = false
 
     private var watcher: FileWatcher?
-    private let renderer = MarkdownRenderer()
     private let defaults = UserDefaults.standard
     private var scopedURLs: Set<URL> = []
     private var navigationHistory = NavigationHistory()
     private var recentHistory = WorkspaceRecentDocumentHistory()
     private var workspaceSessions: [String: WorkspaceTabSession] = [:]
     private var recentWorkspaceHistory = RecentWorkspaceHistory()
+    private var loadTask: Task<Void, Never>?
+    private var loadRequestID = UUID()
+    private var renderCache: [URL: CachedRender] = [:]
 
     init() {
         restoreWorkspaceSessions()
@@ -191,7 +204,12 @@ final class WorkspaceStore: ObservableObject {
                 ? openDocuments[index]
                 : openDocuments.last
             if let next = selectedDocument { load(next) }
-            else { renderedDocument = nil; watcher = nil }
+            else {
+                loadTask?.cancel()
+                renderedDocument = nil
+                renderedDocumentURL = nil
+                watcher = nil
+            }
         }
         persistTabs()
     }
@@ -256,6 +274,7 @@ final class WorkspaceStore: ObservableObject {
     func handleSelectedFileChange() {
         guard let document = selectedDocument else { return }
         if FileManager.default.fileExists(atPath: document.url.path) {
+            renderCache.removeValue(forKey: document.url.standardizedFileURL)
             load(document, preservePosition: true)
         } else {
             reconcileOpenDocuments()
@@ -285,6 +304,7 @@ final class WorkspaceStore: ObservableObject {
                 load(selectedDocument)
             } else {
                 renderedDocument = nil
+                renderedDocumentURL = nil
                 errorMessage = nil
                 watcher = nil
             }
@@ -333,29 +353,80 @@ final class WorkspaceStore: ObservableObject {
     }
 
     private func load(_ document: OpenDocument, preservePosition: Bool = false) {
-        guard FileManager.default.fileExists(atPath: document.url.path) else {
+        let url = document.url.standardizedFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
             reconcileOpenDocuments()
             return
         }
+
+        let modificationDate = Self.modificationDate(for: url)
+        loadTask?.cancel()
+        if let cached = renderCache[url], cached.modificationDate == modificationDate {
+            publish(cached.document, for: url)
+            return
+        }
+
+        let requestID = UUID()
+        loadRequestID = requestID
+        renderedDocumentURL = nil
+        errorMessage = nil
+
+        loadTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(35))
+            guard !Task.isCancelled else { return }
+            let result = await Task.detached(priority: .userInitiated) {
+                Self.renderDocument(at: url)
+            }.value
+            guard let self,
+                  !Task.isCancelled,
+                  self.loadRequestID == requestID,
+                  self.selectedDocument?.url.standardizedFileURL == url else { return }
+
+            switch result {
+            case let .success(rendered, date):
+                self.renderCache[url] = CachedRender(document: rendered, modificationDate: date)
+                if self.renderCache.count > 32,
+                   let removable = self.renderCache.keys.first(where: { $0 != url }) {
+                    self.renderCache.removeValue(forKey: removable)
+                }
+                self.publish(rendered, for: url)
+            case let .failure(message):
+                if !FileManager.default.fileExists(atPath: url.path) {
+                    self.reconcileOpenDocuments()
+                } else {
+                    self.errorMessage = message
+                    self.renderedDocument = nil
+                    self.renderedDocumentURL = nil
+                }
+            }
+        }
+    }
+
+    private func publish(_ document: RenderedDocument, for url: URL) {
+        renderedDocument = document
+        renderedDocumentURL = url
+        errorMessage = nil
+        reloadToken = UUID()
+        watcher = FileWatcher(url: url) { [weak self] in
+            Task { @MainActor in self?.handleSelectedFileChange() }
+        }
+    }
+
+    nonisolated private static func renderDocument(at url: URL) -> DocumentLoadResult {
         do {
-            let data = try Data(contentsOf: document.url)
+            let data = try Data(contentsOf: url)
             guard let source = String(data: data, encoding: .utf8) else {
                 throw CocoaError(.fileReadInapplicableStringEncoding)
             }
-            renderedDocument = renderer.render(source: source, baseURL: document.url.deletingLastPathComponent())
-            errorMessage = nil
-            reloadToken = UUID()
-            watcher = FileWatcher(url: document.url) { [weak self] in
-                Task { @MainActor in self?.handleSelectedFileChange() }
-            }
+            let rendered = MarkdownRenderer().render(source: source, baseURL: url.deletingLastPathComponent())
+            return .success(rendered, modificationDate(for: url))
         } catch {
-            if !FileManager.default.fileExists(atPath: document.url.path) {
-                reconcileOpenDocuments()
-                return
-            }
-            errorMessage = error.localizedDescription
-            renderedDocument = nil
+            return .failure(error.localizedDescription)
         }
+    }
+
+    nonisolated private static func modificationDate(for url: URL) -> Date? {
+        try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
 
     private func restorePreferences() {
@@ -492,10 +563,14 @@ final class WorkspaceStore: ObservableObject {
     }
 
     private func resetWorkspacePresentation() {
+        loadTask?.cancel()
+        loadRequestID = UUID()
+        renderCache.removeAll()
         openDocuments = []
         selectedDocument = nil
         previewDocumentID = nil
         renderedDocument = nil
+        renderedDocumentURL = nil
         selectedHeadingID = nil
         errorMessage = nil
         watcher = nil

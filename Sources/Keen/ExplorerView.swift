@@ -6,7 +6,10 @@ struct ExplorerView: View {
     @State private var searchText = ""
     @State private var searchResults: [FileNode] = []
     @State private var searchTask: Task<Void, Never>?
+    @State private var navigationURLs: [URL] = []
+    @State private var navigationIndexTask: Task<Void, Never>?
     @State private var showWorkspaceMenu = false
+    @FocusState private var treeFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -25,7 +28,9 @@ struct ExplorerView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
                             if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                FileNodeRow(node: root, depth: 0, initiallyExpanded: true)
+                                FileNodeRow(node: root, depth: 0, initiallyExpanded: true) {
+                                    treeFocused = true
+                                }
                                     .environmentObject(store)
                                     .id(root.id)
                             } else if searchResults.isEmpty {
@@ -33,7 +38,9 @@ struct ExplorerView: View {
                                     .padding(.top, 24)
                             } else {
                                 ForEach(searchResults) { result in
-                                    FileNodeRow(node: result, depth: 0)
+                                    FileNodeRow(node: result, depth: 0) {
+                                        treeFocused = true
+                                    }
                                         .environmentObject(store)
                                 }
                             }
@@ -72,10 +79,22 @@ struct ExplorerView: View {
             }
         }
         .background(Color(nsColor: .controlBackgroundColor))
+        .focusable()
+        .focused($treeFocused)
+        .focusEffectDisabled()
+        .onMoveCommand(perform: moveSelection)
+        .onAppear { scheduleNavigationIndex() }
         .onChange(of: searchText) { _, query in scheduleSearch(query) }
         .onChange(of: store.showHiddenFiles) { _, _ in scheduleSearch(searchText) }
-        .onChange(of: store.rootNode?.id) { _, _ in scheduleSearch(searchText) }
-        .onDisappear { searchTask?.cancel() }
+        .onChange(of: store.showHiddenFiles) { _, _ in scheduleNavigationIndex() }
+        .onChange(of: store.rootNode?.id) { _, _ in
+            scheduleSearch(searchText)
+            scheduleNavigationIndex()
+        }
+        .onDisappear {
+            searchTask?.cancel()
+            navigationIndexTask?.cancel()
+        }
     }
 
     private func scheduleSearch(_ query: String) {
@@ -111,6 +130,38 @@ struct ExplorerView: View {
                 proxy.scrollTo(url, anchor: .center)
             }
         }
+    }
+
+    private func scheduleNavigationIndex() {
+        navigationIndexTask?.cancel()
+        guard let root = store.rootNode else {
+            navigationURLs = []
+            return
+        }
+        let rootURL = root.url
+        let showHidden = store.showHiddenFiles
+        navigationIndexTask = Task {
+            let urls = await Task.detached(priority: .utility) {
+                FileNode.searchMarkdownFileURLs(
+                    rootURL: rootURL,
+                    matching: "",
+                    showHidden: showHidden,
+                    limit: 10_000
+                )
+            }.value
+            guard !Task.isCancelled else { return }
+            navigationURLs = urls
+        }
+    }
+
+    private func moveSelection(_ direction: MoveCommandDirection) {
+        guard direction == .up || direction == .down, !navigationURLs.isEmpty else { return }
+        let offset = direction == .down ? 1 : -1
+        let currentURL = store.selectedDocument?.url.standardizedFileURL
+        let currentIndex = currentURL.flatMap { navigationURLs.firstIndex(of: $0) }
+            ?? (offset > 0 ? -1 : 0)
+        let nextIndex = (currentIndex + offset + navigationURLs.count) % navigationURLs.count
+        store.openFile(navigationURLs[nextIndex])
     }
 }
 
@@ -259,13 +310,20 @@ private struct FileNodeRow: View {
     @EnvironmentObject private var store: WorkspaceStore
     let node: FileNode
     let depth: Int
+    let focusTree: () -> Void
     @State private var expanded: Bool
     @State private var children: [FileNode] = []
     @State private var watcher: FileWatcher?
 
-    init(node: FileNode, depth: Int, initiallyExpanded: Bool = false) {
+    init(
+        node: FileNode,
+        depth: Int,
+        initiallyExpanded: Bool = false,
+        focusTree: @escaping () -> Void = {}
+    ) {
         self.node = node
         self.depth = depth
+        self.focusTree = focusTree
         _expanded = State(initialValue: initiallyExpanded)
     }
 
@@ -313,7 +371,7 @@ private struct FileNodeRow: View {
 
             if node.isDirectory && expanded {
                 ForEach(children) { child in
-                    FileNodeRow(node: child, depth: depth + 1)
+                    FileNodeRow(node: child, depth: depth + 1, focusTree: focusTree)
                         .environmentObject(store)
                 }
             }
@@ -332,6 +390,7 @@ private struct FileNodeRow: View {
         TapGesture(count: 2)
             .exclusively(before: TapGesture(count: 1))
             .onEnded { value in
+                focusTree()
                 switch value {
                 case .first:
                     if node.isDirectory {
