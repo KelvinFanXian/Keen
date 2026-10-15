@@ -1,14 +1,42 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+private final class ExplorerTreeState: ObservableObject {
+    @Published private(set) var expandedURLs: Set<URL> = []
+    @Published var cursorURL: URL?
+
+    func reset(rootURL: URL?) {
+        expandedURLs = rootURL.map { [$0.standardizedFileURL] } ?? []
+        cursorURL = rootURL?.standardizedFileURL
+    }
+
+    func isExpanded(_ url: URL) -> Bool {
+        expandedURLs.contains(url.standardizedFileURL)
+    }
+
+    func expand(_ url: URL) {
+        expandedURLs.insert(url.standardizedFileURL)
+    }
+
+    func collapse(_ url: URL) {
+        expandedURLs.remove(url.standardizedFileURL)
+    }
+
+    func toggle(_ url: URL) {
+        let normalized = url.standardizedFileURL
+        if expandedURLs.contains(normalized) { expandedURLs.remove(normalized) }
+        else { expandedURLs.insert(normalized) }
+    }
+}
+
 struct ExplorerView: View {
     @EnvironmentObject private var store: WorkspaceStore
     @State private var searchText = ""
     @State private var searchResults: [FileNode] = []
     @State private var searchTask: Task<Void, Never>?
-    @State private var navigationURLs: [URL] = []
-    @State private var navigationIndexTask: Task<Void, Never>?
     @State private var showWorkspaceMenu = false
+    @StateObject private var treeState = ExplorerTreeState()
     @FocusState private var treeFocused: Bool
 
     var body: some View {
@@ -28,7 +56,7 @@ struct ExplorerView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
                             if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                FileNodeRow(node: root, depth: 0, initiallyExpanded: true) {
+                                FileNodeRow(node: root, depth: 0, treeState: treeState) {
                                     treeFocused = true
                                 }
                                     .environmentObject(store)
@@ -38,7 +66,7 @@ struct ExplorerView: View {
                                     .padding(.top, 24)
                             } else {
                                 ForEach(searchResults) { result in
-                                    FileNodeRow(node: result, depth: 0) {
+                                    FileNodeRow(node: result, depth: 0, treeState: treeState) {
                                         treeFocused = true
                                     }
                                         .environmentObject(store)
@@ -50,6 +78,12 @@ struct ExplorerView: View {
                     .onAppear { revealCurrentDocument(using: proxy) }
                     .onChange(of: store.selectedDocument?.url) { _, _ in
                         revealCurrentDocument(using: proxy)
+                    }
+                    .onChange(of: treeState.cursorURL) { _, url in
+                        guard let url else { return }
+                        withAnimation(.easeOut(duration: 0.12)) {
+                            proxy.scrollTo(url.standardizedFileURL, anchor: .center)
+                        }
                     }
                 }
             } else {
@@ -83,18 +117,18 @@ struct ExplorerView: View {
         .focused($treeFocused)
         .focusEffectDisabled()
         .onMoveCommand(perform: moveSelection)
-        .onAppear { scheduleNavigationIndex() }
+        .onKeyPress(.return) {
+            activateCursor()
+            return .handled
+        }
+        .onAppear { treeState.reset(rootURL: store.rootNode?.url) }
         .onChange(of: searchText) { _, query in scheduleSearch(query) }
         .onChange(of: store.showHiddenFiles) { _, _ in scheduleSearch(searchText) }
-        .onChange(of: store.showHiddenFiles) { _, _ in scheduleNavigationIndex() }
         .onChange(of: store.rootNode?.id) { _, _ in
             scheduleSearch(searchText)
-            scheduleNavigationIndex()
+            treeState.reset(rootURL: store.rootNode?.url)
         }
-        .onDisappear {
-            searchTask?.cancel()
-            navigationIndexTask?.cancel()
-        }
+        .onDisappear { searchTask?.cancel() }
     }
 
     private func scheduleSearch(_ query: String) {
@@ -132,36 +166,68 @@ struct ExplorerView: View {
         }
     }
 
-    private func scheduleNavigationIndex() {
-        navigationIndexTask?.cancel()
-        guard let root = store.rootNode else {
-            navigationURLs = []
-            return
-        }
-        let rootURL = root.url
-        let showHidden = store.showHiddenFiles
-        navigationIndexTask = Task {
-            let urls = await Task.detached(priority: .utility) {
-                FileNode.searchMarkdownFileURLs(
-                    rootURL: rootURL,
-                    matching: "",
-                    showHidden: showHidden,
-                    limit: 10_000
-                )
-            }.value
-            guard !Task.isCancelled else { return }
-            navigationURLs = urls
+    private func moveSelection(_ direction: MoveCommandDirection) {
+        let nodes = visibleNodes()
+        guard !nodes.isEmpty else { return }
+        let cursor = treeState.cursorURL?.standardizedFileURL
+        let index = cursor.flatMap { url in nodes.firstIndex { $0.url.standardizedFileURL == url } } ?? 0
+
+        switch direction {
+        case .up:
+            treeState.cursorURL = nodes[max(0, index - 1)].url.standardizedFileURL
+        case .down:
+            treeState.cursorURL = nodes[min(nodes.count - 1, index + 1)].url.standardizedFileURL
+        case .left:
+            let node = nodes[index]
+            if node.isDirectory, treeState.isExpanded(node.url) {
+                treeState.collapse(node.url)
+            } else if let parent = parentNode(of: node, in: nodes) {
+                treeState.cursorURL = parent.url.standardizedFileURL
+            }
+        case .right:
+            let node = nodes[index]
+            guard node.isDirectory else { return }
+            if treeState.isExpanded(node.url) {
+                if index + 1 < nodes.count, node.contains(nodes[index + 1].url) {
+                    treeState.cursorURL = nodes[index + 1].url.standardizedFileURL
+                }
+            } else {
+                treeState.expand(node.url)
+            }
+        default:
+            break
         }
     }
 
-    private func moveSelection(_ direction: MoveCommandDirection) {
-        guard direction == .up || direction == .down, !navigationURLs.isEmpty else { return }
-        let offset = direction == .down ? 1 : -1
-        let currentURL = store.selectedDocument?.url.standardizedFileURL
-        let currentIndex = currentURL.flatMap { navigationURLs.firstIndex(of: $0) }
-            ?? (offset > 0 ? -1 : 0)
-        let nextIndex = (currentIndex + offset + navigationURLs.count) % navigationURLs.count
-        store.openFile(navigationURLs[nextIndex])
+    private func activateCursor() {
+        let nodes = visibleNodes()
+        guard let cursor = treeState.cursorURL?.standardizedFileURL,
+              let node = nodes.first(where: { $0.url.standardizedFileURL == cursor }) else { return }
+        if node.isDirectory { treeState.toggle(node.url) }
+        else { store.openFile(node.url) }
+    }
+
+    private func visibleNodes() -> [FileNode] {
+        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return searchResults
+        }
+        guard let root = store.rootNode else { return [] }
+        var result: [FileNode] = []
+        appendVisible(root, to: &result)
+        return result
+    }
+
+    private func appendVisible(_ node: FileNode, to result: inout [FileNode]) {
+        result.append(node)
+        guard node.isDirectory, treeState.isExpanded(node.url) else { return }
+        for child in node.loadChildren(showHidden: store.showHiddenFiles) {
+            appendVisible(child, to: &result)
+        }
+    }
+
+    private func parentNode(of node: FileNode, in nodes: [FileNode]) -> FileNode? {
+        let parentURL = node.url.deletingLastPathComponent().standardizedFileURL
+        return nodes.first { $0.isDirectory && $0.url.standardizedFileURL == parentURL }
     }
 }
 
@@ -308,24 +374,27 @@ private struct RecentWorkspaceRow: View {
 
 private struct FileNodeRow: View {
     @EnvironmentObject private var store: WorkspaceStore
+    @ObservedObject var treeState: ExplorerTreeState
     let node: FileNode
     let depth: Int
     let focusTree: () -> Void
-    @State private var expanded: Bool
     @State private var children: [FileNode] = []
     @State private var watcher: FileWatcher?
 
     init(
         node: FileNode,
         depth: Int,
-        initiallyExpanded: Bool = false,
+        treeState: ExplorerTreeState,
         focusTree: @escaping () -> Void = {}
     ) {
         self.node = node
         self.depth = depth
+        self.treeState = treeState
         self.focusTree = focusTree
-        _expanded = State(initialValue: initiallyExpanded)
     }
+
+    private var expanded: Bool { treeState.isExpanded(node.url) }
+    private var hasCursor: Bool { treeState.cursorURL?.standardizedFileURL == node.url.standardizedFileURL }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -350,7 +419,7 @@ private struct FileNodeRow: View {
             .padding(.trailing, 6)
             .padding(.vertical, 4)
             .contentShape(Rectangle())
-            .background(store.selectedDocument?.url == node.url ? Color.accentColor.opacity(0.15) : Color.clear)
+            .background(rowBackground)
             .id(node.url.standardizedFileURL)
             .gesture(rowGesture)
             .contextMenu {
@@ -371,7 +440,7 @@ private struct FileNodeRow: View {
 
             if node.isDirectory && expanded {
                 ForEach(children) { child in
-                    FileNodeRow(node: child, depth: depth + 1, focusTree: focusTree)
+                    FileNodeRow(node: child, depth: depth + 1, treeState: treeState, focusTree: focusTree)
                         .environmentObject(store)
                 }
             }
@@ -382,6 +451,9 @@ private struct FileNodeRow: View {
             watchDirectory()
         }
         .onChange(of: store.selectedDocument?.url) { _, _ in revealSelectedDocument() }
+        .onChange(of: expanded) { _, isExpanded in
+            if isExpanded { children = node.loadChildren(showHidden: store.showHiddenFiles) }
+        }
         .onChange(of: store.showHiddenFiles) { _, _ in reloadDirectory() }
         .onDisappear { watcher = nil }
     }
@@ -391,6 +463,7 @@ private struct FileNodeRow: View {
             .exclusively(before: TapGesture(count: 1))
             .onEnded { value in
                 focusTree()
+                treeState.cursorURL = node.url.standardizedFileURL
                 switch value {
                 case .first:
                     if node.isDirectory {
@@ -406,7 +479,7 @@ private struct FileNodeRow: View {
     }
 
     private func toggleDirectory() {
-        expanded.toggle()
+        treeState.toggle(node.url)
         if expanded { children = node.loadChildren(showHidden: store.showHiddenFiles) }
     }
 
@@ -414,8 +487,16 @@ private struct FileNodeRow: View {
         guard node.isDirectory,
               let selectedURL = store.selectedDocument?.url,
               node.contains(selectedURL) else { return }
-        expanded = true
+        treeState.expand(node.url)
         children = node.loadChildren(showHidden: store.showHiddenFiles)
+    }
+
+    private var rowBackground: Color {
+        if hasCursor { return Color.accentColor.opacity(0.24) }
+        if store.selectedDocument?.url.standardizedFileURL == node.url.standardizedFileURL {
+            return Color.accentColor.opacity(0.11)
+        }
+        return .clear
     }
 
     private func watchDirectory() {
