@@ -4,6 +4,10 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject private var store: WorkspaceStore
     @State private var isDropTargeted = false
+    @State private var findQuery = ""
+    @State private var findCommand = PageFindCommand()
+    @State private var findResult = PageFindResult()
+    @FocusState private var findFieldFocused: Bool
 
     var body: some View {
         HSplitView {
@@ -24,13 +28,25 @@ struct ContentView: View {
             if store.showOutline && !store.focusMode {
                 OutlineView()
                     .environmentObject(store)
-                    .frame(minWidth: 190, idealWidth: 240, maxWidth: 320)
+                    .frame(minWidth: 170, idealWidth: 260)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(store.selectedDocument?.title ?? "Keen")
         .toolbar {
-            ToolbarItem(placement: .navigation) {
+            ToolbarItemGroup(placement: .navigation) {
+                Button { store.navigateBack() } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .disabled(!store.canNavigateBack)
+                .help("后退（⌘[）")
+
+                Button { store.navigateForward() } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .disabled(!store.canNavigateForward)
+                .help("前进（⌘]）")
+
                 Button { store.showExplorer.toggle() } label: {
                     Image(systemName: "sidebar.left")
                 }
@@ -81,6 +97,19 @@ struct ContentView: View {
         .onChange(of: store.readingWidth) { _, _ in store.persistPreferences() }
         .onChange(of: store.showExplorer) { _, _ in store.persistPreferences() }
         .onChange(of: store.showHiddenFiles) { _, _ in store.persistPreferences() }
+        .onChange(of: store.showFindBar) { _, isPresented in
+            if isPresented {
+                findCommand.activate(query: findQuery)
+                focusFindField()
+            } else {
+                findCommand.deactivate()
+            }
+        }
+        .onChange(of: store.findFocusRequest) { _, _ in focusFindField() }
+        .sheet(isPresented: $store.showRecentFiles) {
+            RecentFilesView()
+                .environmentObject(store)
+        }
     }
 
     @ViewBuilder
@@ -89,6 +118,17 @@ struct ContentView: View {
             ContentUnavailableView("无法读取文档", systemImage: "exclamationmark.triangle", description: Text(message))
         } else if let rendered = store.renderedDocument, let document = store.selectedDocument {
             VStack(spacing: 0) {
+                if store.showFindBar {
+                    PageFindBar(
+                        query: $findQuery,
+                        result: findResult,
+                        isFocused: $findFieldFocused,
+                        findPrevious: { requestFind(backwards: true) },
+                        findNext: { requestFind(backwards: false) },
+                        close: { store.showFindBar = false }
+                    )
+                    .onChange(of: findQuery) { _, _ in requestFind(backwards: false) }
+                }
                 MarkdownWebView(
                     document: rendered,
                     sourceURL: document.url,
@@ -98,9 +138,11 @@ struct ContentView: View {
                     fontSize: store.fontSize,
                     readingWidth: store.readingWidth,
                     reloadToken: store.reloadToken,
+                    findCommand: findCommand,
+                    findResult: $findResult,
                     selectedHeadingID: $store.selectedHeadingID,
                     openLocalMarkdown: { url, headingID in
-                        store.openFile(url, headingID: headingID)
+                        store.openLinkedDocument(url, headingID: headingID)
                     }
                 )
                 Divider()
@@ -113,6 +155,146 @@ struct ContentView: View {
                 openFolder: store.chooseFolder
             )
         }
+    }
+
+    private func requestFind(backwards: Bool) {
+        findCommand.request(query: findQuery, backwards: backwards)
+    }
+
+    private func focusFindField() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(60))
+            guard store.showFindBar else { return }
+            findFieldFocused = true
+        }
+    }
+}
+
+private struct RecentFilesView: View {
+    @EnvironmentObject private var store: WorkspaceStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedURL: URL?
+    @FocusState private var listFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("最近打开的文件")
+                    .font(.system(size: 17, weight: .semibold))
+                Spacer()
+                Text("最近 \(store.recentDocuments.count) 个")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 18)
+            .frame(height: 52)
+
+            Divider()
+
+            if store.recentDocuments.isEmpty {
+                ContentUnavailableView("没有最近文件", systemImage: "clock")
+            } else {
+                List(store.recentDocuments, id: \.self, selection: $selectedURL) { url in
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(url.deletingPathExtension().lastPathComponent)
+                                .lineLimit(1)
+                            Text(url.deletingLastPathComponent().path)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                    .tag(url)
+                    .onTapGesture { open(url) }
+                }
+                .focused($listFocused)
+            }
+
+            Divider()
+            HStack {
+                Text("单击打开  ·  ↑↓ 选择  ·  ↩ 打开  ·  Esc 关闭")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("取消") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("打开") { openSelected() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(selectedURL == nil)
+            }
+            .padding(14)
+        }
+        .frame(width: 620, height: 430)
+        .onAppear {
+            selectedURL = store.recentDocuments.first
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(60))
+                listFocused = true
+            }
+        }
+    }
+
+    private func openSelected() {
+        guard let selectedURL else { return }
+        open(selectedURL)
+    }
+
+    private func open(_ url: URL) {
+        dismiss()
+        store.openRecentFile(url)
+    }
+}
+
+private struct PageFindBar: View {
+    @Binding var query: String
+    let result: PageFindResult
+    var isFocused: FocusState<Bool>.Binding
+    let findPrevious: () -> Void
+    let findNext: () -> Void
+    let close: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("在页面中查找", text: $query)
+                .textFieldStyle(.plain)
+                .focused(isFocused)
+                .onSubmit(findNext)
+                .frame(minWidth: 180, idealWidth: 260, maxWidth: 360)
+
+            Text(resultLabel)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(result.count == 0 && !query.isEmpty ? .red : .secondary)
+                .frame(minWidth: 48, alignment: .trailing)
+
+            Button(action: findPrevious) { Image(systemName: "chevron.up") }
+                .disabled(query.isEmpty || result.count == 0)
+                .help("上一个")
+            Button(action: findNext) { Image(systemName: "chevron.down") }
+                .disabled(query.isEmpty || result.count == 0)
+                .help("下一个（回车）")
+            Button(action: close) { Image(systemName: "xmark") }
+                .keyboardShortcut(.cancelAction)
+                .help("关闭（Esc）")
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private var resultLabel: String {
+        guard !query.isEmpty else { return "" }
+        guard result.count > 0 else { return "无结果" }
+        return "\(result.index)/\(result.count)"
     }
 }
 

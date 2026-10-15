@@ -31,3 +31,11 @@ import Testing
 
     #expect(node.searchMarkdownFiles(matching: "部署", showHidden: false).map(\.name) == ["部署指南.md"])
 }
+
+@Test func detectsFilesInsideDirectoryWithoutMatchingSiblingPrefixes() {
+    let node = FileNode(url: URL(fileURLWithPath: "/docs/project"), isDirectory: true)
+
+    #expect(node.contains(URL(fileURLWithPath: "/docs/project/spec/guide.md")))
+    #expect(!node.contains(URL(fileURLWithPath: "/docs/project-copy/guide.md")))
+    #expect(!node.contains(URL(fileURLWithPath: "/docs/project")))
+}

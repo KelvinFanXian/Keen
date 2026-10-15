@@ -36,7 +36,7 @@ struct MarkdownRenderer {
         html,body { margin:0; min-height:100%; background:var(--bg); color:var(--fg); }
         body { font-family:var(--body-font); font-size:var(--font-size,15px); line-height:var(--body-leading); letter-spacing:.002em; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
         main { width:min(var(--reading-width,860px), calc(100vw - 80px)); margin:0 auto; padding:48px 0 96px; }
-        html[data-style='swiss'] main { width:min(calc(65rem + 64px), calc(100vw - 60px)); margin:30px auto 0; padding:32px 32px 96px; }
+        html[data-style='swiss'] main { width:calc(100vw - 60px); max-width:none; margin:30px auto 0; padding:32px 32px 96px; }
         html[data-style='everforest-light'] main { width:calc(100vw - 96px); padding-top:34px; }
         h1,h2,h3,h4,h5,h6 { font-family:var(--heading-font); color:var(--fg); font-weight:var(--heading-weight); line-height:1.3; margin:1.72em 0 .66em; letter-spacing:-.018em; scroll-margin-top:24px; }
         h1 { font-size:2.18em; margin-top:.1em; padding-bottom:.38em; border-bottom:1px solid var(--line); } h2 { font-size:1.72em; padding-bottom:.28em; border-bottom:1px solid var(--soft-line); }
@@ -84,6 +84,10 @@ struct MarkdownRenderer {
         table.history-table th:nth-child(2),table.history-table td:nth-child(2) { min-width:70px; }
         table.history-table th:nth-last-child(2),table.history-table td:nth-last-child(2) { min-width:72px; text-align:center; }
         table.history-table th:last-child,table.history-table td:last-child { min-width:72px; text-align:center; }
+        html[data-style='swiss'] table.issue-table,table.issue-table { width:100%; table-layout:fixed; }
+        table.issue-table th:nth-child(1),table.issue-table td:nth-child(1) { width:90px; min-width:90px; overflow-wrap:normal; word-break:normal; }
+        table.issue-table th:nth-child(2),table.issue-table td:nth-child(2) { width:22%; }
+        table.issue-table th:nth-child(3),table.issue-table td:nth-child(3) { width:16%; }
         img { max-width:100%; height:auto; border-radius:4px; } hr { border:0; border-top:1px solid var(--line); margin:2em 0; }
         ul.task-list { list-style:none; padding-left:.15em; }
         .task-list > li { display:grid; grid-template-columns:22px minmax(0,1fr); align-items:start; margin:.28em 0; }
@@ -277,7 +281,9 @@ private struct HTMLBuilder {
         let columnCount = headerCells.count
         let headerTitles = headerCells.map { plainText($0).trimmingCharacters(in: .whitespacesAndNewlines) }
         let isHistoryTable = headerTitles == ["时间", "版本", "描述", "作者", "审核人"]
-        let tableClasses = isHistoryTable ? "columns-\(columnCount) history-table" : "columns-\(columnCount)"
+        let isIssueTable = headerTitles == ["正式编号", "问题", "证据", "状态"]
+        let semanticClass = isHistoryTable ? " history-table" : (isIssueTable ? " issue-table" : "")
+        let tableClasses = "columns-\(columnCount)\(semanticClass)"
         let header = headerCells.map { cell in
             "<th>\(renderChildren(cell))</th>"
         }.joined()

@@ -65,6 +65,17 @@ import Testing
     #expect(result.html.contains("html[data-style='swiss'] table.history-table,table.history-table { width:100%; table-layout:auto; }"))
 }
 
+@Test func appliesStableWidthsToIssueTable() {
+    let source = """
+    | 正式编号 | 问题 | 证据 | 状态 |
+    | --- | --- | --- | --- |
+    | G:B37 | 新增按钮不可见 | 审计命中 | 已修复 |
+    """
+    let result = MarkdownRenderer().render(source: source, baseURL: URL(fileURLWithPath: "/tmp/docs"))
+    #expect(result.html.contains("<table class=\"columns-4 issue-table\">"))
+    #expect(result.html.contains("table.issue-table th:nth-child(1)"))
+}
+
 @Test func blocksRemoteAndTraversingImages() {
     let source = """
     ![remote](https://example.com/a.png)

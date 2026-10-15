@@ -32,11 +32,37 @@ private struct KeenCommands: Commands {
                 .keyboardShortcut("o")
             Button("打开文件夹…") { store.chooseFolder() }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
+            Divider()
+            Button("最近打开的文件…") { store.presentRecentFiles() }
+                .keyboardShortcut("e")
+                .disabled(store.recentDocuments.isEmpty)
         }
         CommandGroup(after: .pasteboard) {
+            Button("在页面中查找…") { store.presentFindBar() }
+                .keyboardShortcut("f")
+                .disabled(store.selectedDocument == nil)
+            Divider()
             Button("复制当前文件绝对路径") { store.copyCurrentFilePath() }
                 .keyboardShortcut("c", modifiers: [.command, .option])
                 .disabled(store.selectedDocument == nil)
+        }
+        CommandMenu("导航") {
+            Button("后退") { store.navigateBack() }
+                .keyboardShortcut("[", modifiers: .command)
+                .disabled(!store.canNavigateBack)
+            Button("前进") { store.navigateForward() }
+                .keyboardShortcut("]", modifiers: .command)
+                .disabled(!store.canNavigateForward)
+            Divider()
+            Button("切换到标签 1") { store.selectTab(at: 1) }.keyboardShortcut("1").disabled(store.openDocuments.count < 1)
+            Button("切换到标签 2") { store.selectTab(at: 2) }.keyboardShortcut("2").disabled(store.openDocuments.count < 2)
+            Button("切换到标签 3") { store.selectTab(at: 3) }.keyboardShortcut("3").disabled(store.openDocuments.count < 3)
+            Button("切换到标签 4") { store.selectTab(at: 4) }.keyboardShortcut("4").disabled(store.openDocuments.count < 4)
+            Button("切换到标签 5") { store.selectTab(at: 5) }.keyboardShortcut("5").disabled(store.openDocuments.count < 5)
+            Button("切换到标签 6") { store.selectTab(at: 6) }.keyboardShortcut("6").disabled(store.openDocuments.count < 6)
+            Button("切换到标签 7") { store.selectTab(at: 7) }.keyboardShortcut("7").disabled(store.openDocuments.count < 7)
+            Button("切换到标签 8") { store.selectTab(at: 8) }.keyboardShortcut("8").disabled(store.openDocuments.count < 8)
+            Button("切换到标签 9") { store.selectTab(at: 9) }.keyboardShortcut("9").disabled(store.openDocuments.count < 9)
         }
         CommandMenu("阅读") {
             Button("增大字号") { store.adjustFontSize(by: 1) }

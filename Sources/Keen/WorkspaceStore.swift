@@ -21,13 +21,27 @@ final class WorkspaceStore: ObservableObject {
     @Published var readingWidth: Double = 860
     @Published var errorMessage: String?
     @Published var reloadToken = UUID()
+    @Published private(set) var canNavigateBack = false
+    @Published private(set) var canNavigateForward = false
+    @Published var showFindBar = false
+    @Published private(set) var findFocusRequest = UUID()
+    @Published private(set) var recentDocuments: [URL] = []
+    @Published var showRecentFiles = false
+    @Published private(set) var recentWorkspaces: [URL] = []
 
     private var watcher: FileWatcher?
     private let renderer = MarkdownRenderer()
     private let defaults = UserDefaults.standard
     private var scopedURLs: Set<URL> = []
+    private var navigationHistory = NavigationHistory()
+    private var recentHistory = WorkspaceRecentDocumentHistory()
+    private var workspaceSessions: [String: WorkspaceTabSession] = [:]
+    private var recentWorkspaceHistory = RecentWorkspaceHistory()
 
     init() {
+        restoreWorkspaceSessions()
+        restoreRecentWorkspaces()
+        restoreRecentDocuments()
         restorePreferences()
         restoreWorkspace()
     }
@@ -52,10 +66,68 @@ final class WorkspaceStore: ObservableObject {
         openFile(url)
     }
 
+    func presentFindBar() {
+        showFindBar = true
+        findFocusRequest = UUID()
+    }
+
+    func presentRecentFiles() {
+        if let workspaceURL = rootNode?.url {
+            recentHistory.retain(in: workspaceURL) { FileManager.default.fileExists(atPath: $0.path) }
+        }
+        syncRecentDocuments()
+        showRecentFiles = true
+    }
+
+    func openRecentFile(_ url: URL) {
+        showRecentFiles = false
+        openFile(url)
+    }
+
+    func selectTab(at position: Int) {
+        let index = position - 1
+        guard openDocuments.indices.contains(index) else { return }
+        select(openDocuments[index])
+    }
+
     func openFolder(_ url: URL) {
-        retainAccess(to: url)
+        let workspaceURL = url.standardizedFileURL
+        if rootNode?.url.standardizedFileURL == workspaceURL {
+            rememberWorkspace(workspaceURL)
+            return
+        }
+        persistCurrentWorkspaceSession()
+        retainAccess(to: workspaceURL)
+        resetWorkspacePresentation()
+        rootNode = FileNode(url: workspaceURL, isDirectory: true)
+        restoreWorkspaceSession(for: workspaceURL)
+        rememberWorkspace(workspaceURL)
+        defaults.set(workspaceURL.path, forKey: "lastWorkspace")
+        syncRecentDocuments()
+    }
+
+    func refreshWorkspace() {
+        guard let url = rootNode?.url else { return }
         rootNode = FileNode(url: url, isDirectory: true)
-        defaults.set(url.path, forKey: "lastWorkspace")
+    }
+
+    func revealWorkspaceInFinder() {
+        guard let url = rootNode?.url else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func togglePinnedWorkspace(_ url: URL) {
+        recentWorkspaceHistory.togglePinned(url)
+        syncRecentWorkspaces()
+    }
+
+    func removeRecentWorkspace(_ url: URL) {
+        recentWorkspaceHistory.remove(url)
+        syncRecentWorkspaces()
+    }
+
+    func isWorkspacePinned(_ url: URL) -> Bool {
+        recentWorkspaceHistory.isPinned(url)
     }
 
     func openFile(_ url: URL, headingID: String? = nil, pinned: Bool = false) {
@@ -74,10 +146,34 @@ final class WorkspaceStore: ObservableObject {
             previewDocumentID = pinned ? previewDocumentID : document.id
         }
         selectedDocument = document
+        rememberRecentDocument(url)
         selectedHeadingID = nil
         load(document)
         selectedHeadingID = headingID
         persistTabs()
+    }
+
+    func openLinkedDocument(_ url: URL, headingID: String? = nil) {
+        let target = NavigationLocation(url: url, headingID: headingID)
+        if let current = currentNavigationLocation, current != target {
+            navigationHistory.recordVisit(from: current)
+            syncNavigationState()
+        }
+        openFile(url, headingID: headingID)
+    }
+
+    func navigateBack() {
+        guard let current = currentNavigationLocation,
+              let target = navigationHistory.goBack(from: current) else { return }
+        syncNavigationState()
+        openFile(target.url, headingID: target.headingID)
+    }
+
+    func navigateForward() {
+        guard let current = currentNavigationLocation,
+              let target = navigationHistory.goForward(from: current) else { return }
+        syncNavigationState()
+        openFile(target.url, headingID: target.headingID)
     }
 
     func close(_ document: OpenDocument) {
@@ -136,7 +232,9 @@ final class WorkspaceStore: ObservableObject {
     func select(_ document: OpenDocument) {
         guard selectedDocument != document else { return }
         selectedDocument = document
+        rememberRecentDocument(document.url)
         load(document)
+        persistTabs()
     }
 
     func refresh() {
@@ -149,8 +247,38 @@ final class WorkspaceStore: ObservableObject {
         if FileManager.default.fileExists(atPath: document.url.path) {
             load(document, preservePosition: true)
         } else {
-            close(document)
+            reconcileOpenDocuments()
         }
+    }
+
+    func reconcileOpenDocuments() {
+        let previousDocuments = openDocuments
+        let validDocuments = previousDocuments.filter { FileManager.default.fileExists(atPath: $0.url.path) }
+        guard validDocuments.count != previousDocuments.count else { return }
+
+        let previousSelection = selectedDocument
+        let previousIndex = previousSelection.flatMap { previousDocuments.firstIndex(of: $0) }
+        openDocuments = validDocuments
+        if let previewDocumentID, !validDocuments.contains(where: { $0.id == previewDocumentID }) {
+            self.previewDocumentID = nil
+        }
+
+        if let previousSelection, !validDocuments.contains(previousSelection) {
+            if let previousIndex, !validDocuments.isEmpty {
+                selectedDocument = validDocuments[min(previousIndex, validDocuments.count - 1)]
+            } else {
+                selectedDocument = validDocuments.last
+            }
+            selectedHeadingID = nil
+            if let selectedDocument {
+                load(selectedDocument)
+            } else {
+                renderedDocument = nil
+                errorMessage = nil
+                watcher = nil
+            }
+        }
+        persistTabs()
     }
 
     func copyCurrentFilePath() {
@@ -194,6 +322,10 @@ final class WorkspaceStore: ObservableObject {
     }
 
     private func load(_ document: OpenDocument, preservePosition: Bool = false) {
+        guard FileManager.default.fileExists(atPath: document.url.path) else {
+            reconcileOpenDocuments()
+            return
+        }
         do {
             let data = try Data(contentsOf: document.url)
             guard let source = String(data: data, encoding: .utf8) else {
@@ -205,8 +337,11 @@ final class WorkspaceStore: ObservableObject {
             watcher = FileWatcher(url: document.url) { [weak self] in
                 Task { @MainActor in self?.handleSelectedFileChange() }
             }
-            defaults.set(document.url.path, forKey: "lastFile")
         } catch {
+            if !FileManager.default.fileExists(atPath: document.url.path) {
+                reconcileOpenDocuments()
+                return
+            }
             errorMessage = error.localizedDescription
             renderedDocument = nil
         }
@@ -227,38 +362,147 @@ final class WorkspaceStore: ObservableObject {
         showHiddenFiles = defaults.bool(forKey: "showHiddenFiles")
     }
 
+    private func restoreRecentDocuments() {
+        let stored = defaults.dictionary(forKey: "recentDocumentsByWorkspace") as? [String: [String]] ?? [:]
+        recentHistory = WorkspaceRecentDocumentHistory(pathsByWorkspace: stored)
+        recentDocuments = []
+    }
+
+    private func restoreWorkspaceSessions() {
+        if let data = defaults.data(forKey: "workspaceTabSessions"),
+           let decoded = try? JSONDecoder().decode([String: WorkspaceTabSession].self, from: data) {
+            workspaceSessions = decoded
+            return
+        }
+        guard let workspacePath = defaults.string(forKey: "lastWorkspace") else { return }
+        let root = FileNode(url: URL(fileURLWithPath: workspacePath), isDirectory: true)
+        let tabs = (defaults.stringArray(forKey: "openTabs") ?? []).filter {
+            FileManager.default.fileExists(atPath: $0) && root.contains(URL(fileURLWithPath: $0))
+        }
+        let selected = defaults.string(forKey: "lastFile").flatMap {
+            root.contains(URL(fileURLWithPath: $0)) ? $0 : nil
+        }
+        if !tabs.isEmpty || selected != nil {
+            workspaceSessions[root.url.standardizedFileURL.path] = WorkspaceTabSession(
+                openTabPaths: tabs,
+                selectedPath: selected
+            )
+            persistWorkspaceSessions()
+        }
+        defaults.removeObject(forKey: "openTabs")
+        defaults.removeObject(forKey: "lastFile")
+    }
+
+    private func restoreRecentWorkspaces() {
+        let urls = (defaults.stringArray(forKey: "recentWorkspaces") ?? [])
+            .map(URL.init(fileURLWithPath:))
+            .filter { url in
+                var isDirectory: ObjCBool = false
+                return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+            }
+        let pinnedURLs = (defaults.stringArray(forKey: "pinnedWorkspaces") ?? []).map(URL.init(fileURLWithPath:))
+        recentWorkspaceHistory = RecentWorkspaceHistory(urls: urls, pinnedURLs: pinnedURLs)
+        if let lastPath = defaults.string(forKey: "lastWorkspace"), FileManager.default.fileExists(atPath: lastPath) {
+            recentWorkspaceHistory.record(URL(fileURLWithPath: lastPath))
+        }
+        syncRecentWorkspaces()
+    }
+
+    private func rememberWorkspace(_ url: URL) {
+        recentWorkspaceHistory.record(url)
+        syncRecentWorkspaces()
+    }
+
+    private func syncRecentWorkspaces() {
+        recentWorkspaceHistory.retain { url in
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+        }
+        recentWorkspaces = recentWorkspaceHistory.urls
+        defaults.set(recentWorkspaces.map(\.path), forKey: "recentWorkspaces")
+        defaults.set(recentWorkspaceHistory.pinnedURLs.map(\.path), forKey: "pinnedWorkspaces")
+    }
+
+    private func rememberRecentDocument(_ url: URL) {
+        guard let root = rootNode, root.contains(url) else { return }
+        recentHistory.record(url, in: root.url)
+        syncRecentDocuments()
+    }
+
+    private func syncRecentDocuments() {
+        if let workspaceURL = rootNode?.url {
+            recentDocuments = recentHistory.documents(in: workspaceURL)
+                .filter { FileManager.default.fileExists(atPath: $0.path) }
+        } else {
+            recentDocuments = []
+        }
+        defaults.set(recentHistory.pathsByWorkspace, forKey: "recentDocumentsByWorkspace")
+    }
+
     private func restoreWorkspace() {
         if let path = defaults.string(forKey: "lastWorkspace"), FileManager.default.fileExists(atPath: path) {
             openFolder(URL(fileURLWithPath: path))
         }
-        let paths = defaults.stringArray(forKey: "openTabs") ?? []
-        for path in paths where FileManager.default.fileExists(atPath: path) {
-            let url = URL(fileURLWithPath: path)
-            let document = OpenDocument(id: url, url: url)
-            openDocuments.append(document)
-        }
-        if let lastPath = defaults.string(forKey: "lastFile"),
-           FileManager.default.fileExists(atPath: lastPath) {
-            let url = URL(fileURLWithPath: lastPath)
-            let document = openDocuments.first(where: { $0.url.path == lastPath })
-                ?? OpenDocument(id: url, url: url)
-            if !openDocuments.contains(document) {
-                openDocuments.append(document)
-                previewDocumentID = document.id
-            }
-            selectedDocument = document
-            load(document)
-        } else if let document = openDocuments.last {
-            selectedDocument = document
-            load(document)
-        }
     }
 
     private func persistTabs() {
-        defaults.set(openDocuments.filter { $0.id != previewDocumentID }.map(\.url.path), forKey: "openTabs")
+        persistCurrentWorkspaceSession()
+    }
+
+    private func persistCurrentWorkspaceSession() {
+        guard let root = rootNode else { return }
+        let tabs = openDocuments.map(\.url).filter { root.contains($0) && FileManager.default.fileExists(atPath: $0.path) }
+        let selectedPath = selectedDocument.flatMap { root.contains($0.url) ? $0.url.path : nil }
+        workspaceSessions[root.url.standardizedFileURL.path] = WorkspaceTabSession(
+            openTabPaths: tabs.map(\.path),
+            selectedPath: selectedPath
+        )
+        persistWorkspaceSessions()
+    }
+
+    private func persistWorkspaceSessions() {
+        guard let data = try? JSONEncoder().encode(workspaceSessions) else { return }
+        defaults.set(data, forKey: "workspaceTabSessions")
+    }
+
+    private func restoreWorkspaceSession(for workspaceURL: URL) {
+        guard let session = workspaceSessions[workspaceURL.standardizedFileURL.path] else { return }
+        let root = FileNode(url: workspaceURL, isDirectory: true)
+        openDocuments = session.openTabPaths.compactMap { path in
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            guard FileManager.default.fileExists(atPath: url.path), root.contains(url) else { return nil }
+            return OpenDocument(id: url, url: url)
+        }
+        guard !openDocuments.isEmpty else { return }
+        selectedDocument = session.selectedPath.flatMap { path in
+            openDocuments.first { $0.url.path == path }
+        } ?? openDocuments.last
+        if let selectedDocument { load(selectedDocument) }
+    }
+
+    private func resetWorkspacePresentation() {
+        openDocuments = []
+        selectedDocument = nil
+        previewDocumentID = nil
+        renderedDocument = nil
+        selectedHeadingID = nil
+        errorMessage = nil
+        watcher = nil
+        navigationHistory = NavigationHistory()
+        syncNavigationState()
+        showFindBar = false
     }
 
     private func retainAccess(to url: URL) {
         if url.startAccessingSecurityScopedResource() { scopedURLs.insert(url) }
+    }
+
+    private var currentNavigationLocation: NavigationLocation? {
+        selectedDocument.map { NavigationLocation(url: $0.url, headingID: selectedHeadingID) }
+    }
+
+    private func syncNavigationState() {
+        canNavigateBack = navigationHistory.canGoBack
+        canNavigateForward = navigationHistory.canGoForward
     }
 }

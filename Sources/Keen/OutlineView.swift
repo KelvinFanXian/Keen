@@ -5,15 +5,6 @@ struct OutlineView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("大纲").font(.headline)
-                Spacer()
-                Button { store.showOutline = false } label: { Image(systemName: "sidebar.right") }
-                    .buttonStyle(.borderless)
-            }
-            .padding(12)
-            Divider()
-
             if let headings = store.renderedDocument?.headings, !headings.isEmpty {
                 ScrollViewReader { proxy in
                     ScrollView {

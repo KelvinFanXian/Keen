@@ -6,6 +6,7 @@ struct ExplorerView: View {
     @State private var searchText = ""
     @State private var searchResults: [FileNode] = []
     @State private var searchTask: Task<Void, Never>?
+    @State private var showWorkspaceMenu = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -14,34 +15,59 @@ struct ExplorerView: View {
                     .foregroundStyle(.secondary)
                 TextField("搜索文件", text: $searchText)
                     .textFieldStyle(.plain)
-                Button { store.chooseFolder() } label: { Image(systemName: "folder.badge.plus") }
-                    .buttonStyle(.borderless)
-                    .help("打开文件夹")
             }
             .padding(.horizontal, 10)
             .frame(height: 39)
             Divider()
 
             if let root = store.rootNode {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 1) {
-                        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            FileNodeRow(node: root, depth: 0, initiallyExpanded: true)
-                                .environmentObject(store)
-                        } else if searchResults.isEmpty {
-                            ContentUnavailableView.search(text: searchText)
-                                .padding(.top, 24)
-                        } else {
-                            ForEach(searchResults) { result in
-                                FileNodeRow(node: result, depth: 0)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 1) {
+                            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                FileNodeRow(node: root, depth: 0, initiallyExpanded: true)
                                     .environmentObject(store)
+                            } else if searchResults.isEmpty {
+                                ContentUnavailableView.search(text: searchText)
+                                    .padding(.top, 24)
+                            } else {
+                                ForEach(searchResults) { result in
+                                    FileNodeRow(node: result, depth: 0)
+                                        .environmentObject(store)
+                                }
                             }
                         }
+                        .padding(.vertical, 6)
                     }
-                    .padding(.vertical, 6)
+                    .onAppear { revealCurrentDocument(using: proxy) }
+                    .onChange(of: store.selectedDocument?.url) { _, _ in
+                        revealCurrentDocument(using: proxy)
+                    }
                 }
             } else {
                 ContentUnavailableView("未打开文件夹", systemImage: "folder", description: Text("按 ⇧⌘O 选择工作区"))
+            }
+
+            Divider()
+            Button { showWorkspaceMenu.toggle() } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "folder")
+                    Text(store.rootNode?.name ?? "打开文件夹")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .popover(isPresented: $showWorkspaceMenu, arrowEdge: .bottom) {
+                WorkspaceMenuView(isPresented: $showWorkspaceMenu)
+                    .environmentObject(store)
             }
         }
         .background(Color(nsColor: .controlBackgroundColor))
@@ -63,6 +89,173 @@ struct ExplorerView: View {
             guard !Task.isCancelled else { return }
             searchResults = root.searchMarkdownFiles(matching: trimmed, showHidden: store.showHiddenFiles)
         }
+    }
+
+    private func revealCurrentDocument(using proxy: ScrollViewProxy) {
+        guard searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let url = store.selectedDocument?.url.standardizedFileURL else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            withAnimation(.easeOut(duration: 0.18)) {
+                proxy.scrollTo(url, anchor: .center)
+            }
+        }
+    }
+}
+
+private struct WorkspaceMenuView: View {
+    @EnvironmentObject private var store: WorkspaceStore
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("工作区")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
+                Button { isPresented = false } label: {
+                    Image(systemName: "xmark.circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("关闭")
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 42)
+
+            Divider()
+
+            Text("操作")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
+                .padding(.bottom, 4)
+
+            WorkspaceActionRow(title: "打开文件夹…", systemImage: "folder.badge.plus") {
+                isPresented = false
+                store.chooseFolder()
+            }
+            WorkspaceActionRow(title: "在 Finder 中显示", systemImage: "finder") {
+                isPresented = false
+                store.revealWorkspaceInFinder()
+            }
+            .disabled(store.rootNode == nil)
+            WorkspaceActionRow(title: "刷新", systemImage: "arrow.clockwise") {
+                isPresented = false
+                store.refreshWorkspace()
+            }
+            .disabled(store.rootNode == nil)
+
+            Divider().padding(.vertical, 7)
+
+            Text("最近使用的目录")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 5)
+
+            if store.recentWorkspaces.isEmpty {
+                Text("暂无记录")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+            } else {
+                ForEach(store.recentWorkspaces, id: \.self) { url in
+                    RecentWorkspaceRow(
+                        url: url,
+                        isCurrent: store.rootNode?.url.standardizedFileURL == url.standardizedFileURL,
+                        isPinned: store.isWorkspacePinned(url),
+                        open: {
+                            isPresented = false
+                            store.openFolder(url)
+                        },
+                        togglePinned: { store.togglePinnedWorkspace(url) },
+                        remove: { store.removeRecentWorkspace(url) }
+                    )
+                }
+            }
+        }
+        .padding(.bottom, 9)
+        .frame(width: 330)
+    }
+}
+
+private struct WorkspaceActionRow: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 13))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .frame(height: 31)
+                .contentShape(Rectangle())
+                .background(isHovered ? Color.primary.opacity(0.055) : Color.clear)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+}
+
+private struct RecentWorkspaceRow: View {
+    let url: URL
+    let isCurrent: Bool
+    let isPinned: Bool
+    let open: () -> Void
+    let togglePinned: () -> Void
+    let remove: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: open) {
+                HStack(spacing: 8) {
+                    Image(systemName: "folder")
+                        .foregroundStyle(.secondary)
+                    Text(url.lastPathComponent)
+                        .font(.system(size: 13))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(url.path)
+
+            if isHovered || isPinned {
+                Button(action: togglePinned) {
+                    Image(systemName: isPinned ? "pin.fill" : "pin")
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(isPinned ? Color.accentColor : .secondary)
+                .help(isPinned ? "取消固定" : "固定")
+
+                Button(action: remove) {
+                    Image(systemName: "trash")
+                        .frame(width: 18, height: 18)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("从最近目录移除")
+            } else if isCurrent {
+                Circle().fill(Color.accentColor).frame(width: 6, height: 6)
+                    .padding(.horizontal, 6)
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 34)
+        .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -104,6 +297,7 @@ private struct FileNodeRow: View {
             .padding(.vertical, 4)
             .contentShape(Rectangle())
             .background(store.selectedDocument?.url == node.url ? Color.accentColor.opacity(0.15) : Color.clear)
+            .id(node.url.standardizedFileURL)
             .gesture(rowGesture)
             .contextMenu {
                 Button("打开") {
@@ -129,9 +323,11 @@ private struct FileNodeRow: View {
             }
         }
         .onAppear {
+            revealSelectedDocument()
             if expanded { children = node.loadChildren(showHidden: store.showHiddenFiles) }
             watchDirectory()
         }
+        .onChange(of: store.selectedDocument?.url) { _, _ in revealSelectedDocument() }
         .onChange(of: store.showHiddenFiles) { _, _ in reloadDirectory() }
         .onDisappear { watcher = nil }
     }
@@ -159,6 +355,14 @@ private struct FileNodeRow: View {
         if expanded { children = node.loadChildren(showHidden: store.showHiddenFiles) }
     }
 
+    private func revealSelectedDocument() {
+        guard node.isDirectory,
+              let selectedURL = store.selectedDocument?.url,
+              node.contains(selectedURL) else { return }
+        expanded = true
+        children = node.loadChildren(showHidden: store.showHiddenFiles)
+    }
+
     private func watchDirectory() {
         guard node.isDirectory else { return }
         watcher = FileWatcher(url: node.url) {
@@ -169,6 +373,7 @@ private struct FileNodeRow: View {
     private func reloadDirectory() {
         guard node.isDirectory else { return }
         children = node.reloadChildren(showHidden: store.showHiddenFiles)
+        store.reconcileOpenDocuments()
     }
 
     private func copy(_ value: String) {
