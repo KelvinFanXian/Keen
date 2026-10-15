@@ -110,6 +110,10 @@ struct ContentView: View {
             RecentFilesView()
                 .environmentObject(store)
         }
+        .sheet(isPresented: $store.showWorkspaceSearch) {
+            WorkspaceFileSearchView()
+                .environmentObject(store)
+        }
     }
 
     @ViewBuilder
@@ -174,46 +178,69 @@ private struct RecentFilesView: View {
     @EnvironmentObject private var store: WorkspaceStore
     @Environment(\.dismiss) private var dismiss
     @State private var selectedURL: URL?
-    @FocusState private var listFocused: Bool
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("最近打开的文件")
-                    .font(.system(size: 17, weight: .semibold))
-                Spacer()
-                Text("最近 \(store.recentDocuments.count) 个")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+            VStack(spacing: 10) {
+                HStack {
+                    Text("最近打开的文件")
+                        .font(.system(size: 17, weight: .semibold))
+                    Spacer()
+                    Text("\(filteredDocuments.count)/\(store.recentDocuments.count)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("按文件名或相对路径过滤", text: $query)
+                        .textFieldStyle(.plain)
+                        .focused($searchFocused)
+                        .onSubmit(openSelected)
+                        .onKeyPress(.downArrow) { moveSelection(by: 1); return .handled }
+                        .onKeyPress(.upArrow) { moveSelection(by: -1); return .handled }
+                }
+                .padding(.horizontal, 9)
+                .frame(height: 30)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
             }
-            .padding(.horizontal, 18)
-            .frame(height: 52)
+            .padding(16)
 
             Divider()
 
-            if store.recentDocuments.isEmpty {
-                ContentUnavailableView("没有最近文件", systemImage: "clock")
+            if filteredDocuments.isEmpty {
+                ContentUnavailableView.search(text: query)
             } else {
-                List(store.recentDocuments, id: \.self, selection: $selectedURL) { url in
+                List(filteredDocuments, id: \.self, selection: $selectedURL) { url in
                     HStack(spacing: 10) {
                         Image(systemName: "doc.text")
                             .foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(url.deletingPathExtension().lastPathComponent)
                                 .lineLimit(1)
-                            Text(url.deletingLastPathComponent().path)
+                            Text(relativeDirectory(for: url))
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
+                        Spacer(minLength: 0)
                     }
-                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 5)
                     .contentShape(Rectangle())
                     .tag(url)
-                    .onTapGesture { open(url) }
+                    .onTapGesture {
+                        selectedURL = url
+                        Task { @MainActor in
+                            await Task.yield()
+                            open(url)
+                        }
+                    }
                 }
-                .focused($listFocused)
+                .listStyle(.plain)
             }
 
             Divider()
@@ -232,12 +259,13 @@ private struct RecentFilesView: View {
         }
         .frame(width: 620, height: 430)
         .onAppear {
-            selectedURL = store.recentDocuments.first
+            selectedURL = filteredDocuments.first
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(60))
-                listFocused = true
+                searchFocused = true
             }
         }
+        .onChange(of: query) { _, _ in selectedURL = filteredDocuments.first }
     }
 
     private func openSelected() {
@@ -248,6 +276,183 @@ private struct RecentFilesView: View {
     private func open(_ url: URL) {
         dismiss()
         store.openRecentFile(url)
+    }
+
+    private func moveSelection(by offset: Int) {
+        let documents = filteredDocuments
+        guard !documents.isEmpty else { selectedURL = nil; return }
+        let current = selectedURL.flatMap { documents.firstIndex(of: $0) } ?? (offset > 0 ? -1 : 0)
+        selectedURL = documents[(current + offset + documents.count) % documents.count]
+    }
+
+    private var filteredDocuments: [URL] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return store.recentDocuments }
+        return store.recentDocuments.filter { url in
+            relativePath(for: url).localizedCaseInsensitiveContains(needle)
+        }
+    }
+
+    private func relativePath(for url: URL) -> String {
+        guard let root = store.rootNode?.url.standardizedFileURL else { return url.path }
+        return url.standardizedFileURL.path.replacingOccurrences(of: root.path + "/", with: "")
+    }
+
+    private func relativeDirectory(for url: URL) -> String {
+        let path = relativePath(for: url)
+        let directory = (path as NSString).deletingLastPathComponent
+        return directory.isEmpty ? "." : directory
+    }
+}
+
+private struct WorkspaceFileSearchView: View {
+    @EnvironmentObject private var store: WorkspaceStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var indexedURLs: [URL] = []
+    @State private var results: [URL] = []
+    @State private var selectedURL: URL?
+    @State private var searchTask: Task<Void, Never>?
+    @FocusState private var searchFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 10) {
+                HStack {
+                    Text("搜索工作区文件")
+                        .font(.system(size: 17, weight: .semibold))
+                    Spacer()
+                    Text("\(results.count) 个结果")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("输入文件名或相对路径", text: $query)
+                        .textFieldStyle(.plain)
+                        .focused($searchFocused)
+                        .onSubmit(openSelected)
+                        .onKeyPress(.downArrow) { moveSelection(by: 1); return .handled }
+                        .onKeyPress(.upArrow) { moveSelection(by: -1); return .handled }
+                }
+                .padding(.horizontal, 9)
+                .frame(height: 30)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
+            }
+            .padding(16)
+
+            Divider()
+
+            if results.isEmpty {
+                ContentUnavailableView.search(text: query)
+            } else {
+                List(results, id: \.self, selection: $selectedURL) { url in
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(url.deletingPathExtension().lastPathComponent)
+                                .lineLimit(1)
+                            Text(relativeDirectory(for: url))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                    .tag(url)
+                    .onTapGesture {
+                        selectedURL = url
+                        Task { @MainActor in
+                            await Task.yield()
+                            open(url)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+
+            Divider()
+            HStack {
+                Text("按文件名或相对路径匹配  ·  ↑↓ 选择  ·  ↩ 打开")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("打开") { openSelected() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(selectedURL == nil)
+            }
+            .padding(14)
+        }
+        .frame(width: 660, height: 500)
+        .onAppear {
+            scheduleSearch()
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(60))
+                searchFocused = true
+            }
+        }
+        .onChange(of: query) { _, _ in scheduleSearch() }
+        .onDisappear { searchTask?.cancel() }
+    }
+
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(indexedURLs.isEmpty ? 0 : 45))
+            guard !Task.isCancelled, let root = store.rootNode else { return }
+            if indexedURLs.isEmpty {
+                let rootURL = root.url
+                let showHidden = store.showHiddenFiles
+                indexedURLs = await Task.detached(priority: .userInitiated) {
+                    FileNode.searchMarkdownFileURLs(
+                        rootURL: rootURL,
+                        matching: "",
+                        showHidden: showHidden,
+                        limit: 5_000
+                    )
+                }.value
+            }
+            guard !Task.isCancelled else { return }
+            let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            results = indexedURLs.filter {
+                needle.isEmpty || relativePath(for: $0).localizedCaseInsensitiveContains(needle)
+            }.prefix(200).map { $0 }
+            selectedURL = results.first
+        }
+    }
+
+    private func openSelected() {
+        guard let selectedURL else { return }
+        open(selectedURL)
+    }
+
+    private func open(_ url: URL) {
+        dismiss()
+        store.openFile(url)
+    }
+
+    private func moveSelection(by offset: Int) {
+        guard !results.isEmpty else { selectedURL = nil; return }
+        let current = selectedURL.flatMap { results.firstIndex(of: $0) } ?? (offset > 0 ? -1 : 0)
+        selectedURL = results[(current + offset + results.count) % results.count]
+    }
+
+    private func relativePath(for url: URL) -> String {
+        guard let root = store.rootNode?.url.standardizedFileURL else { return url.path }
+        return url.standardizedFileURL.path.replacingOccurrences(of: root.path + "/", with: "")
+    }
+
+    private func relativeDirectory(for url: URL) -> String {
+        let relative = relativePath(for: url)
+        let directory = (relative as NSString).deletingLastPathComponent
+        return directory.isEmpty ? "." : directory
     }
 }
 

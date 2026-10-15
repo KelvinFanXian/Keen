@@ -88,7 +88,17 @@ struct ExplorerView: View {
         searchTask = Task {
             try? await Task.sleep(for: .milliseconds(160))
             guard !Task.isCancelled else { return }
-            searchResults = root.searchMarkdownFiles(matching: trimmed, showHidden: store.showHiddenFiles)
+            let rootURL = root.url
+            let showHidden = store.showHiddenFiles
+            let urls = await Task.detached(priority: .userInitiated) {
+                FileNode.searchMarkdownFileURLs(
+                    rootURL: rootURL,
+                    matching: trimmed,
+                    showHidden: showHidden
+                )
+            }.value
+            guard !Task.isCancelled else { return }
+            searchResults = urls.map { FileNode(url: $0, isDirectory: false) }
         }
     }
 

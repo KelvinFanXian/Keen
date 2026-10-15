@@ -41,6 +41,9 @@ private struct KeenCommands: Commands {
             Button("在页面中查找…") { store.presentFindBar() }
                 .keyboardShortcut("f")
                 .disabled(store.selectedDocument == nil)
+            Button("搜索工作区文件…") { store.presentWorkspaceSearch() }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(store.rootNode == nil)
             Divider()
             Button("复制当前文件绝对路径") { store.copyCurrentFilePath() }
                 .keyboardShortcut("c", modifiers: [.command, .option])

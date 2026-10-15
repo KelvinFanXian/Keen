@@ -27,9 +27,13 @@ import Testing
 
     try Data("# Guide".utf8).write(to: root.appendingPathComponent("部署指南.md"))
     try Data("ignored".utf8).write(to: root.appendingPathComponent("部署日志.txt"))
+    let nested = root.appendingPathComponent("bug-fix", isDirectory: true)
+    try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    try Data("# Checklist".utf8).write(to: nested.appendingPathComponent("缺陷清单.md"))
     let node = FileNode(url: root, isDirectory: true)
 
     #expect(node.searchMarkdownFiles(matching: "部署", showHidden: false).map(\.name) == ["部署指南.md"])
+    #expect(node.searchMarkdownFiles(matching: "bug-fix", showHidden: false).map(\.name) == ["缺陷清单.md"])
 }
 
 @Test func detectsFilesInsideDirectoryWithoutMatchingSiblingPrefixes() {

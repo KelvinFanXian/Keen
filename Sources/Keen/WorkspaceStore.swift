@@ -28,6 +28,7 @@ final class WorkspaceStore: ObservableObject {
     @Published private(set) var recentDocuments: [URL] = []
     @Published var showRecentFiles = false
     @Published private(set) var recentWorkspaces: [URL] = []
+    @Published var showWorkspaceSearch = false
 
     private var watcher: FileWatcher?
     private let renderer = MarkdownRenderer()
@@ -77,6 +78,11 @@ final class WorkspaceStore: ObservableObject {
         }
         syncRecentDocuments()
         showRecentFiles = true
+    }
+
+    func presentWorkspaceSearch() {
+        guard rootNode != nil else { return }
+        showWorkspaceSearch = true
     }
 
     func openRecentFile(_ url: URL) {

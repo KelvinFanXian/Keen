@@ -232,31 +232,45 @@ final class FileNode: Identifiable, Hashable {
     }
 
     func searchMarkdownFiles(matching query: String, showHidden: Bool) -> [FileNode] {
-        guard isDirectory else { return [] }
+        Self.searchMarkdownFileURLs(
+            rootURL: url,
+            matching: query,
+            showHidden: showHidden
+        ).map { FileNode(url: $0, isDirectory: false) }
+    }
+
+    static func searchMarkdownFileURLs(
+        rootURL: URL,
+        matching query: String,
+        showHidden: Bool,
+        limit: Int = 200
+    ) -> [URL] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty else { return [] }
         let keys: [URLResourceKey] = [.isRegularFileKey, .isHiddenKey]
         let options: FileManager.DirectoryEnumerationOptions = showHidden
             ? [.skipsPackageDescendants]
             : [.skipsPackageDescendants, .skipsHiddenFiles]
         guard let enumerator = FileManager.default.enumerator(
-            at: url,
+            at: rootURL,
             includingPropertiesForKeys: keys,
             options: options
         ) else { return [] }
 
-        var matches: [FileNode] = []
+        var matches: [URL] = []
         for case let child as URL in enumerator {
             let values = try? child.resourceValues(forKeys: Set(keys))
             if !showHidden && (values?.isHidden == true || child.lastPathComponent.hasPrefix(".")) { continue }
             guard values?.isRegularFile == true,
-                  ["md", "markdown"].contains(child.pathExtension.lowercased()),
-                  child.deletingPathExtension().lastPathComponent.localizedCaseInsensitiveContains(needle)
+                  ["md", "markdown"].contains(child.pathExtension.lowercased())
             else { continue }
-            matches.append(FileNode(url: child, isDirectory: false))
-            if matches.count == 200 { break }
+            let relativePath = child.path.replacingOccurrences(of: rootURL.path + "/", with: "")
+            guard needle.isEmpty || relativePath.localizedCaseInsensitiveContains(needle) else { continue }
+            matches.append(child)
+            if matches.count == limit { break }
         }
-        return matches.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        return matches.sorted {
+            $0.path.localizedStandardCompare($1.path) == .orderedAscending
+        }
     }
 
     static func == (lhs: FileNode, rhs: FileNode) -> Bool { lhs.id == rhs.id }
