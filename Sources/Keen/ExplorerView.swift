@@ -27,6 +27,7 @@ struct ExplorerView: View {
                             if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                                 FileNodeRow(node: root, depth: 0, initiallyExpanded: true)
                                     .environmentObject(store)
+                                    .id(root.id)
                             } else if searchResults.isEmpty {
                                 ContentUnavailableView.search(text: searchText)
                                     .padding(.top, 24)
