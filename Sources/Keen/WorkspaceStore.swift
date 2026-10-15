@@ -196,6 +196,11 @@ final class WorkspaceStore: ObservableObject {
         persistTabs()
     }
 
+    func closeSelectedDocument() {
+        guard let selectedDocument else { return }
+        close(selectedDocument)
+    }
+
     func pin(_ document: OpenDocument) {
         if previewDocumentID == document.id {
             previewDocumentID = nil

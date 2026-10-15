@@ -36,6 +36,9 @@ private struct KeenCommands: Commands {
             Button("最近打开的文件…") { store.presentRecentFiles() }
                 .keyboardShortcut("e")
                 .disabled(store.recentDocuments.isEmpty)
+            Divider()
+            Button("关闭当前标签页") { store.closeSelectedDocument() }
+                .keyboardShortcut("w")
         }
         CommandGroup(after: .pasteboard) {
             Button("在页面中查找…") { store.presentFindBar() }
