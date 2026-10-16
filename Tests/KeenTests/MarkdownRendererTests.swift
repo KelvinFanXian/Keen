@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import WebKit
 @testable import Keen
 
 @Test func rendersHeadingsAndSourceLines() {
@@ -107,6 +108,30 @@ import Testing
     #expect(LocalImageResource.url(for: "../outside.png", relativeTo: directory) == nil)
     #expect(LocalImageResource.url(for: "https://example.com/a.png", relativeTo: directory) == nil)
     #expect(LocalImageResource.fileURL(for: resourceURL, inside: directory.appendingPathComponent("other")) == nil)
+}
+
+@MainActor
+@Test(.enabled(if: ProcessInfo.processInfo.environment["KEEN_WEBKIT_INTEGRATION"] == "1"))
+func webViewLoadsLocalImageResource() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let image = directory.appendingPathComponent("图片.png")
+    let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg=="))
+    try png.write(to: image)
+    let resourceURL = try #require(LocalImageResource.url(for: "图片.png", relativeTo: directory))
+
+    let configuration = WKWebViewConfiguration()
+    configuration.setURLSchemeHandler(LocalImageSchemeHandler(directory: directory), forURLScheme: LocalImageResource.scheme)
+    let webView = WKWebView(frame: .init(x: 0, y: 0, width: 100, height: 100), configuration: configuration)
+    webView.loadHTMLString("<img src=\"\(resourceURL.absoluteString)\">", baseURL: directory)
+    var width = 0
+    for _ in 0..<50 {
+        try await Task.sleep(for: .milliseconds(100))
+        width = (try? await webView.evaluateJavaScript("document.images[0]?.naturalWidth") as? Int) ?? 0
+        if width > 0 { break }
+    }
+    #expect(width == 1)
 }
 
 @Test func loadsMermaidOnlyWhenNeeded() {
