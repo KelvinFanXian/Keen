@@ -27,6 +27,7 @@ struct MarkdownWebView: NSViewRepresentable {
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(context.coordinator, name: "keen")
+        configuration.setURLSchemeHandler(LocalImageSchemeHandler(directory: baseURL), forURLScheme: LocalImageResource.scheme)
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")

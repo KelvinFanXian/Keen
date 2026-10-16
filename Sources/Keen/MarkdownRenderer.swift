@@ -343,14 +343,6 @@ private struct HTMLBuilder {
     private func escapeAttribute(_ value: String) -> String { escape(value) }
 
     private func safeImageSource(_ value: String) -> String? {
-        guard !value.isEmpty,
-              !value.hasPrefix("/"),
-              !value.hasPrefix("//"),
-              URLComponents(string: value)?.scheme == nil else { return nil }
-        let decoded = value.removingPercentEncoding ?? value
-        let resolved = baseURL.appendingPathComponent(decoded).standardizedFileURL
-        let root = baseURL.standardizedFileURL.path + "/"
-        guard resolved.path.hasPrefix(root) else { return nil }
-        return value
+        LocalImageResource.url(for: value, relativeTo: baseURL)?.absoluteString
     }
 }

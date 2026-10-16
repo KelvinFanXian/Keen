@@ -77,15 +77,36 @@ import Testing
 }
 
 @Test func blocksRemoteAndTraversingImages() {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let images = directory.appendingPathComponent("images", isDirectory: true)
+    try? FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    try? Data([0x89, 0x50, 0x4e, 0x47]).write(to: images.appendingPathComponent("diagram.png"))
     let source = """
     ![remote](https://example.com/a.png)
     ![traverse](../secret.png)
     ![local](images/diagram.png)
     """
-    let result = MarkdownRenderer().render(source: source, baseURL: URL(fileURLWithPath: "/tmp/docs"))
+    let result = MarkdownRenderer().render(source: source, baseURL: directory)
     #expect(!result.html.contains("src=\"https://example.com"))
     #expect(!result.html.contains("src=\"../secret.png"))
-    #expect(result.html.contains("src=\"images/diagram.png\""))
+    #expect(result.html.contains("src=\"keen-local-image:"))
+    #expect(result.html.contains("images/diagram.png"))
+}
+
+@Test func loadsChineseNamedImagesOnlyInsideDocumentDirectory() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let images = directory.appendingPathComponent("prd", isDirectory: true)
+    try FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let image = images.appendingPathComponent("01-在线打码新增页.png")
+    try Data([0x89, 0x50, 0x4e, 0x47]).write(to: image)
+    let resourceURL = try #require(LocalImageResource.url(for: "./prd/01-在线打码新增页.png", relativeTo: directory))
+    #expect(LocalImageResource.fileURL(for: resourceURL, inside: directory) == image)
+    #expect(LocalImageResource.url(for: "../outside.png", relativeTo: directory) == nil)
+    #expect(LocalImageResource.url(for: "https://example.com/a.png", relativeTo: directory) == nil)
+    #expect(LocalImageResource.fileURL(for: resourceURL, inside: directory.appendingPathComponent("other")) == nil)
 }
 
 @Test func loadsMermaidOnlyWhenNeeded() {
