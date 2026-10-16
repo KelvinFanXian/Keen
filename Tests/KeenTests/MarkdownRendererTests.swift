@@ -114,8 +114,26 @@ import Testing
     #expect(target.fileURL == chinese)
     #expect(target.headingID == "移动端复测")
 
+    let percent = URL(string: chinese.absoluteString + "#50%25%20%E5%AE%8C%E6%88%90")!
+    #expect(DocumentLinkResolver.resolve(percent)?.headingID == "50% 完成")
+
     let extensionless = root.appendingPathComponent("标准产能汇报表人工复测手册")
     #expect(DocumentLinkResolver.resolve(extensionless)?.fileURL == chinese)
+}
+
+@Test func rendersInDocumentAnchorNavigation() {
+    let source = """
+    [跳转](#阅读体验)
+
+    ## 阅读体验
+
+    [返回](#阅读体验)
+    """
+    let result = MarkdownRenderer().render(source: source, baseURL: URL(fileURLWithPath: "/tmp/docs"))
+    #expect(result.headings.first?.id == "阅读体验")
+    #expect(result.html.contains("href=\"#阅读体验\""))
+    #expect(result.html.contains("href?.startsWith('#')"))
+    #expect(result.html.contains("target.scrollIntoView({behavior:'auto',block:'start'})"))
 }
 
 

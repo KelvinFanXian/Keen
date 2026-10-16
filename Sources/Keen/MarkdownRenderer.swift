@@ -104,7 +104,23 @@ struct MarkdownRenderer {
         let reportScroll=()=>bridge?.postMessage({type:'scroll',y:window.scrollY});
         let onScroll=()=>{ if(window.keenScrollFrame) return; window.keenScrollFrame=requestAnimationFrame(()=>{ window.keenScrollFrame=0; reportScroll(); }); };
         window.addEventListener('scroll',onScroll,{passive:true});
-        window.keenScrollTo=id=>document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'});
+        const decodeAnchor=value=>{ try { return decodeURIComponent(value); } catch { return value; } };
+        const anchorSlug=value=>Array.from(value.toLowerCase()).map(char=>/[a-z0-9]/i.test(char)||char.codePointAt(0)>127?char:'-').join('').replace(/-+/g,'-').replace(/^-|-$/g,'')||'section';
+        window.keenScrollTo=id=>{
+          const anchor=id;
+          const target=document.getElementById(anchor)||document.getElementById(anchorSlug(anchor))||headings.find(heading=>heading.textContent.trim()===anchor);
+          if(!target) return null;
+          target.scrollIntoView({behavior:'auto',block:'start'});
+          return target.id;
+        };
+        document.addEventListener('click',event=>{
+          const link=event.target.closest('a[href]');
+          const href=link?.getAttribute('href');
+          if(!href?.startsWith('#')) return;
+          event.preventDefault();
+          const id=window.keenScrollTo(decodeAnchor(href.slice(1)));
+          if(id) bridge?.postMessage({type:'heading',id});
+        });
         window.keenConfigure=(theme,style,size,width)=>{ document.documentElement.dataset.theme=theme; document.documentElement.dataset.style=style; document.documentElement.style.setProperty('--font-size',size+'px'); document.documentElement.style.setProperty('--reading-width',width+'px'); };
         </script>\(mermaidRuntime)</body></html>
         """

@@ -117,7 +117,8 @@ struct ExplorerView: View {
         .focused($treeFocused)
         .focusEffectDisabled()
         .onMoveCommand(perform: moveSelection)
-        .onKeyPress(.return) {
+        .onKeyPress(.space) {
+            guard treeFocused else { return .ignored }
             activateCursor()
             return .handled
         }
@@ -203,8 +204,8 @@ struct ExplorerView: View {
         let nodes = visibleNodes()
         guard let cursor = treeState.cursorURL?.standardizedFileURL,
               let node = nodes.first(where: { $0.url.standardizedFileURL == cursor }) else { return }
-        if node.isDirectory { treeState.toggle(node.url) }
-        else { store.openFile(node.url) }
+        guard !node.isDirectory else { return }
+        store.openFile(node.url)
     }
 
     private func visibleNodes() -> [FileNode] {

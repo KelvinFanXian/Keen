@@ -10,7 +10,7 @@ enum DocumentLinkResolver {
         guard url.isFileURL else { return nil }
 
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let heading = components?.fragment?.removingPercentEncoding
+        let heading = components?.fragment
         components?.fragment = nil
         components?.query = nil
         guard var fileURL = components?.url?.standardizedFileURL else { return nil }

@@ -34,6 +34,9 @@ struct MarkdownWebView: NSViewRepresentable {
         context.coordinator.loadedToken = reloadToken
         context.coordinator.loadedSourceURL = sourceURL
         context.coordinator.pendingScrollY = restoreScrollY
+        context.coordinator.pendingHeadingID = restoreScrollY == nil ? selectedHeadingID : nil
+        context.coordinator.lastRequestedHeading = selectedHeadingID
+        context.coordinator.isLoading = true
         webView.loadHTMLString(document.html, baseURL: baseURL)
         return webView
     }
@@ -53,15 +56,18 @@ struct MarkdownWebView: NSViewRepresentable {
             }
             context.coordinator.loadedToken = reloadToken
             context.coordinator.loadedSourceURL = sourceURL
+            context.coordinator.isLoading = true
             webView.loadHTMLString(document.html, baseURL: baseURL)
         }
         let js = "window.keenConfigure('\(theme.rawValue)', '\(readingStyle.rawValue)', \(fontSize), \(readingWidth));"
         context.coordinator.configurationScript = js
         webView.evaluateJavaScript(js)
-        if context.coordinator.lastRequestedHeading != selectedHeadingID, let id = selectedHeadingID {
+        if !context.coordinator.isLoading,
+           context.coordinator.pendingHeadingID == nil,
+           context.coordinator.pendingScrollY == nil,
+           context.coordinator.lastRequestedHeading != selectedHeadingID, let id = selectedHeadingID {
             context.coordinator.lastRequestedHeading = id
-            let encoded = id.replacingOccurrences(of: "'", with: "\\'")
-            webView.evaluateJavaScript("window.keenScrollTo('\(encoded)')")
+            webView.evaluateJavaScript(Coordinator.scrollScript(for: id))
         }
         context.coordinator.performFindIfNeeded()
     }
@@ -83,6 +89,7 @@ struct MarkdownWebView: NSViewRepresentable {
         var lastRequestedHeading: String?
         var pendingHeadingID: String?
         var pendingScrollY: Double?
+        var isLoading = false
         var configurationScript = "window.keenConfigure('system', 'swiss', 15, 860);"
         var findCommand = PageFindCommand()
         private var performedFindRevision = -1
@@ -101,10 +108,12 @@ struct MarkdownWebView: NSViewRepresentable {
             guard let object = message.body as? [String: Any], let type = object["type"] as? String else { return }
             switch type {
             case "heading":
+                guard !isLoading else { return }
                 guard let id = object["id"] as? String else { return }
                 lastRequestedHeading = id
                 selectedHeadingID = id
             case "scroll":
+                guard !isLoading else { return }
                 guard let y = object["y"] as? Double else { return }
                 onScrollPositionChanged(sourceURL, y)
             default:
@@ -115,20 +124,30 @@ struct MarkdownWebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript(configurationScript)
             if let pendingScrollY {
-                webView.evaluateJavaScript("window.scrollTo(0, \(pendingScrollY))")
-                self.pendingScrollY = nil
-                self.pendingHeadingID = nil
-                self.savedHeading = nil
-                self.savedOffset = 0
-                self.lastRequestedHeading = selectedHeadingID
+                webView.evaluateJavaScript("window.scrollTo(0, \(pendingScrollY))") { [weak self] _, _ in
+                    self?.pendingScrollY = nil
+                    self?.pendingHeadingID = nil
+                    self?.savedHeading = nil
+                    self?.savedOffset = 0
+                    self?.lastRequestedHeading = self?.selectedHeadingID
+                    self?.isLoading = false
+                }
             } else if let targetHeading = pendingHeadingID ?? savedHeading ?? selectedHeadingID {
-                let encoded = targetHeading.replacingOccurrences(of: "'", with: "\\'")
-                webView.evaluateJavaScript("window.keenScrollTo('\(encoded)'); window.scrollBy(0, \(savedOffset));")
-                self.savedHeading = nil
-                self.pendingHeadingID = nil
-                self.lastRequestedHeading = targetHeading
+                let script = "(function(){ const id = \(Self.scrollScript(for: targetHeading)); window.scrollBy(0, \(savedOffset)); return id; })();"
+                webView.evaluateJavaScript(script) { [weak self] value, _ in
+                    guard let self else { return }
+                    self.savedHeading = nil
+                    self.savedOffset = 0
+                    self.pendingHeadingID = nil
+                    let resolvedID = value as? String ?? targetHeading
+                    self.lastRequestedHeading = resolvedID
+                    self.selectedHeadingID = resolvedID
+                    self.isLoading = false
+                }
             } else {
-                webView.evaluateJavaScript("window.scrollTo(0, 0)")
+                webView.evaluateJavaScript("window.scrollTo(0, 0)") { [weak self] _, _ in
+                    self?.isLoading = false
+                }
             }
             performedFindRevision = -1
             performFindIfNeeded()
@@ -158,10 +177,10 @@ struct MarkdownWebView: NSViewRepresentable {
             if let target = DocumentLinkResolver.resolve(url) {
                 if target.fileURL.standardizedFileURL == sourceURL.standardizedFileURL,
                    let headingID = target.headingID {
-                    selectedHeadingID = headingID
-                    lastRequestedHeading = headingID
-                    let encoded = headingID.replacingOccurrences(of: "'", with: "\\'")
-                    _ = try? await webView.evaluateJavaScript("window.keenScrollTo('\(encoded)')")
+                    if let resolvedID = try? await webView.evaluateJavaScript(Self.scrollScript(for: headingID)) as? String {
+                        selectedHeadingID = resolvedID
+                        lastRequestedHeading = resolvedID
+                    }
                 } else {
                     if let scrollY = try? await webView.evaluateJavaScript("window.scrollY") as? Double {
                         onScrollPositionChanged(sourceURL, scrollY)
@@ -182,6 +201,12 @@ struct MarkdownWebView: NSViewRepresentable {
             webView?.evaluateJavaScript("window.scrollY - (document.getElementById('\(id)')?.offsetTop || 0)") { [weak self] value, _ in
                 self?.savedOffset = value as? Double ?? 0
             }
+        }
+
+        static func scrollScript(for headingID: String) -> String {
+            guard let data = try? JSONEncoder().encode(headingID),
+                  let argument = String(data: data, encoding: .utf8) else { return "null" }
+            return "window.keenScrollTo(\(argument))"
         }
     }
 }

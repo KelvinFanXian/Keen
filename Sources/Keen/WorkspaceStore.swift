@@ -170,9 +170,8 @@ final class WorkspaceStore: ObservableObject {
         requestedScrollY = scrollY
         currentScrollY = scrollY ?? 0
         rememberRecentDocument(url)
-        selectedHeadingID = nil
-        load(document)
         selectedHeadingID = headingID
+        load(document)
         persistTabs()
     }
 
