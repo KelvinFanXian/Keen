@@ -65,6 +65,7 @@ Resources/             App 图标和 Info.plist
 scripts/               本地 .app 打包脚本
 docs/REQUIREMENTS.md   产品边界和验收规范
 docs/DEVELOPMENT.md    阶段进度、验证记录和后续计划
+docs/ADJUSTMENTS.md    交互调整需求、状态和验收口径
 docs/ARCHITECTURE.md   模块边界、安全策略和数据流
 docs/TEST_REPORT.md    已执行的功能测试与手工验收清单
 docs/PERFORMANCE.md    性能目标、口径与实测记录
@@ -76,7 +77,7 @@ docs/UI_WALK.md        真实界面走查记录与视觉回归项
 
 Keen 不提供 Markdown 编辑、AI 对话、Agent 管理、Git 客户端、云同步、账号、插件或知识库能力。
 
-详细要求见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)，当前进度见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)，已知问题见 [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)。
+详细要求见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)，当前进度见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)，后续交互调整见 [docs/ADJUSTMENTS.md](docs/ADJUSTMENTS.md)，已知问题见 [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md)。
 
 作者：范显
 
