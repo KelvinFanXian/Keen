@@ -21,6 +21,7 @@ struct OpenDocument: Identifiable, Hashable {
 struct NavigationLocation: Hashable {
     let url: URL
     let headingID: String?
+    var scrollY: Double = 0
 }
 
 struct NavigationHistory {

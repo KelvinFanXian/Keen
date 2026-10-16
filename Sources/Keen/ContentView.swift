@@ -144,11 +144,15 @@ struct ContentView: View {
                     fontSize: store.fontSize,
                     readingWidth: store.readingWidth,
                     reloadToken: store.reloadToken,
+                    restoreScrollY: store.requestedScrollY,
                     findCommand: findCommand,
                     findResult: $findResult,
                     selectedHeadingID: $store.selectedHeadingID,
                     openLocalMarkdown: { url, headingID in
                         store.openLinkedDocument(url, headingID: headingID)
+                    },
+                    onScrollPositionChanged: { url, scrollY in
+                        store.updateScrollPosition(scrollY, for: url)
                     }
                 )
                 Divider()

@@ -21,6 +21,7 @@ final class WorkspaceStore: ObservableObject {
     @Published private(set) var previewDocumentID: URL?
     @Published var renderedDocument: RenderedDocument?
     @Published private(set) var renderedDocumentURL: URL?
+    @Published private(set) var requestedScrollY: Double?
     @Published var selectedHeadingID: String?
     @Published var showExplorer = true
     @Published var showOutline = true
@@ -45,6 +46,7 @@ final class WorkspaceStore: ObservableObject {
     private let defaults = UserDefaults.standard
     private var scopedURLs: Set<URL> = []
     private var navigationHistory = NavigationHistory()
+    private var currentScrollY: Double = 0
     private var recentHistory = WorkspaceRecentDocumentHistory()
     private var workspaceSessions: [String: WorkspaceTabSession] = [:]
     private var recentWorkspaceHistory = RecentWorkspaceHistory()
@@ -149,7 +151,7 @@ final class WorkspaceStore: ObservableObject {
         recentWorkspaceHistory.isPinned(url)
     }
 
-    func openFile(_ url: URL, headingID: String? = nil, pinned: Bool = false) {
+    func openFile(_ url: URL, headingID: String? = nil, pinned: Bool = false, scrollY: Double? = nil) {
         guard ["md", "markdown"].contains(url.pathExtension.lowercased()) else { return }
         retainAccess(to: url)
         let document = OpenDocument(id: url, url: url)
@@ -165,6 +167,8 @@ final class WorkspaceStore: ObservableObject {
             previewDocumentID = pinned ? previewDocumentID : document.id
         }
         selectedDocument = document
+        requestedScrollY = scrollY
+        currentScrollY = scrollY ?? 0
         rememberRecentDocument(url)
         selectedHeadingID = nil
         load(document)
@@ -174,7 +178,8 @@ final class WorkspaceStore: ObservableObject {
 
     func openLinkedDocument(_ url: URL, headingID: String? = nil) {
         let target = NavigationLocation(url: url, headingID: headingID)
-        if let current = currentNavigationLocation, current != target {
+        if let current = currentNavigationLocation,
+           (current.url != target.url || current.headingID != target.headingID) {
             navigationHistory.recordVisit(from: current)
             syncNavigationState()
         }
@@ -185,14 +190,20 @@ final class WorkspaceStore: ObservableObject {
         guard let current = currentNavigationLocation,
               let target = navigationHistory.goBack(from: current) else { return }
         syncNavigationState()
-        openFile(target.url, headingID: target.headingID)
+        openFile(target.url, headingID: target.headingID, scrollY: target.scrollY)
     }
 
     func navigateForward() {
         guard let current = currentNavigationLocation,
               let target = navigationHistory.goForward(from: current) else { return }
         syncNavigationState()
-        openFile(target.url, headingID: target.headingID)
+        openFile(target.url, headingID: target.headingID, scrollY: target.scrollY)
+    }
+
+    func updateScrollPosition(_ scrollY: Double, for url: URL) {
+        guard selectedDocument?.url.standardizedFileURL == url.standardizedFileURL,
+              scrollY.isFinite else { return }
+        currentScrollY = max(0, scrollY)
     }
 
     func close(_ document: OpenDocument) {
@@ -203,6 +214,8 @@ final class WorkspaceStore: ObservableObject {
             selectedDocument = openDocuments.indices.contains(index)
                 ? openDocuments[index]
                 : openDocuments.last
+            requestedScrollY = nil
+            currentScrollY = 0
             if let next = selectedDocument { load(next) }
             else {
                 loadTask?.cancel()
@@ -234,6 +247,8 @@ final class WorkspaceStore: ObservableObject {
         guard openDocuments.contains(document) else { return }
         openDocuments = [document]
         selectedDocument = document
+        requestedScrollY = nil
+        currentScrollY = 0
         previewDocumentID = nil
         load(document)
         persistTabs()
@@ -244,6 +259,8 @@ final class WorkspaceStore: ObservableObject {
         let removed = openDocuments[(index + 1)...]
         if let selectedDocument, removed.contains(selectedDocument) {
             self.selectedDocument = document
+            requestedScrollY = nil
+            currentScrollY = 0
             load(document)
         }
         if let previewDocumentID, removed.contains(where: { $0.id == previewDocumentID }) {
@@ -261,6 +278,8 @@ final class WorkspaceStore: ObservableObject {
     func select(_ document: OpenDocument) {
         guard selectedDocument != document else { return }
         selectedDocument = document
+        requestedScrollY = nil
+        currentScrollY = 0
         rememberRecentDocument(document.url)
         load(document)
         persistTabs()
@@ -268,12 +287,14 @@ final class WorkspaceStore: ObservableObject {
 
     func refresh() {
         guard let document = selectedDocument else { return }
+        requestedScrollY = currentScrollY
         load(document, preservePosition: true)
     }
 
     func handleSelectedFileChange() {
         guard let document = selectedDocument else { return }
         if FileManager.default.fileExists(atPath: document.url.path) {
+            requestedScrollY = currentScrollY
             renderCache.removeValue(forKey: document.url.standardizedFileURL)
             load(document, preservePosition: true)
         } else {
@@ -300,6 +321,8 @@ final class WorkspaceStore: ObservableObject {
                 selectedDocument = validDocuments.last
             }
             selectedHeadingID = nil
+            requestedScrollY = nil
+            currentScrollY = 0
             if let selectedDocument {
                 load(selectedDocument)
             } else {
@@ -571,6 +594,8 @@ final class WorkspaceStore: ObservableObject {
         previewDocumentID = nil
         renderedDocument = nil
         renderedDocumentURL = nil
+        requestedScrollY = nil
+        currentScrollY = 0
         selectedHeadingID = nil
         errorMessage = nil
         watcher = nil
@@ -584,7 +609,7 @@ final class WorkspaceStore: ObservableObject {
     }
 
     private var currentNavigationLocation: NavigationLocation? {
-        selectedDocument.map { NavigationLocation(url: $0.url, headingID: selectedHeadingID) }
+        selectedDocument.map { NavigationLocation(url: $0.url, headingID: selectedHeadingID, scrollY: currentScrollY) }
     }
 
     private func syncNavigationState() {

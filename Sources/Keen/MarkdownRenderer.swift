@@ -101,6 +101,9 @@ struct MarkdownRenderer {
         const headings=[...document.querySelectorAll('h1,h2,h3,h4,h5,h6')];
         const observer=new IntersectionObserver(entries=>{ const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top); if(visible[0]) bridge?.postMessage({type:'heading',id:visible[0].target.id}); }, {rootMargin:'-5% 0px -78% 0px',threshold:[0,1]});
         headings.forEach(h=>observer.observe(h));
+        let reportScroll=()=>bridge?.postMessage({type:'scroll',y:window.scrollY});
+        let onScroll=()=>{ if(window.keenScrollFrame) return; window.keenScrollFrame=requestAnimationFrame(()=>{ window.keenScrollFrame=0; reportScroll(); }); };
+        window.addEventListener('scroll',onScroll,{passive:true});
         window.keenScrollTo=id=>document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'});
         window.keenConfigure=(theme,style,size,width)=>{ document.documentElement.dataset.theme=theme; document.documentElement.dataset.style=style; document.documentElement.style.setProperty('--font-size',size+'px'); document.documentElement.style.setProperty('--reading-width',width+'px'); };
         </script>\(mermaidRuntime)</body></html>

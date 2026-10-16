@@ -11,13 +11,15 @@ struct MarkdownWebView: NSViewRepresentable {
     let fontSize: Double
     let readingWidth: Double
     let reloadToken: UUID
+    let restoreScrollY: Double?
     let findCommand: PageFindCommand
     @Binding var findResult: PageFindResult
     @Binding var selectedHeadingID: String?
     let openLocalMarkdown: (URL, String?) -> Void
+    let onScrollPositionChanged: (URL, Double) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(findResult: $findResult, selectedHeadingID: $selectedHeadingID, sourceURL: sourceURL, openLocalMarkdown: openLocalMarkdown)
+        Coordinator(findResult: $findResult, selectedHeadingID: $selectedHeadingID, sourceURL: sourceURL, openLocalMarkdown: openLocalMarkdown, onScrollPositionChanged: onScrollPositionChanged)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -31,16 +33,20 @@ struct MarkdownWebView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.loadedToken = reloadToken
         context.coordinator.loadedSourceURL = sourceURL
+        context.coordinator.pendingScrollY = restoreScrollY
         webView.loadHTMLString(document.html, baseURL: baseURL)
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.openLocalMarkdown = openLocalMarkdown
+        context.coordinator.onScrollPositionChanged = onScrollPositionChanged
         context.coordinator.sourceURL = sourceURL
         context.coordinator.findCommand = findCommand
         if context.coordinator.loadedToken != reloadToken {
-            if context.coordinator.loadedSourceURL == sourceURL {
+            if let restoreScrollY {
+                context.coordinator.pendingScrollY = restoreScrollY
+            } else if context.coordinator.loadedSourceURL == sourceURL {
                 context.coordinator.capturePosition()
             } else {
                 context.coordinator.pendingHeadingID = selectedHeadingID
@@ -70,33 +76,52 @@ struct MarkdownWebView: NSViewRepresentable {
         @Binding var selectedHeadingID: String?
         var sourceURL: URL
         var openLocalMarkdown: (URL, String?) -> Void
+        var onScrollPositionChanged: (URL, Double) -> Void
         weak var webView: WKWebView?
         var loadedToken: UUID?
         var loadedSourceURL: URL?
         var lastRequestedHeading: String?
         var pendingHeadingID: String?
+        var pendingScrollY: Double?
         var configurationScript = "window.keenConfigure('system', 'swiss', 15, 860);"
         var findCommand = PageFindCommand()
         private var performedFindRevision = -1
         private var savedHeading: String?
         private var savedOffset: Double = 0
 
-        init(findResult: Binding<PageFindResult>, selectedHeadingID: Binding<String?>, sourceURL: URL, openLocalMarkdown: @escaping (URL, String?) -> Void) {
+        init(findResult: Binding<PageFindResult>, selectedHeadingID: Binding<String?>, sourceURL: URL, openLocalMarkdown: @escaping (URL, String?) -> Void, onScrollPositionChanged: @escaping (URL, Double) -> Void) {
             _findResult = findResult
             _selectedHeadingID = selectedHeadingID
             self.sourceURL = sourceURL
             self.openLocalMarkdown = openLocalMarkdown
+            self.onScrollPositionChanged = onScrollPositionChanged
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard let object = message.body as? [String: Any], object["type"] as? String == "heading", let id = object["id"] as? String else { return }
-            lastRequestedHeading = id
-            selectedHeadingID = id
+            guard let object = message.body as? [String: Any], let type = object["type"] as? String else { return }
+            switch type {
+            case "heading":
+                guard let id = object["id"] as? String else { return }
+                lastRequestedHeading = id
+                selectedHeadingID = id
+            case "scroll":
+                guard let y = object["y"] as? Double else { return }
+                onScrollPositionChanged(sourceURL, y)
+            default:
+                break
+            }
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript(configurationScript)
-            if let targetHeading = pendingHeadingID ?? savedHeading ?? selectedHeadingID {
+            if let pendingScrollY {
+                webView.evaluateJavaScript("window.scrollTo(0, \(pendingScrollY))")
+                self.pendingScrollY = nil
+                self.pendingHeadingID = nil
+                self.savedHeading = nil
+                self.savedOffset = 0
+                self.lastRequestedHeading = selectedHeadingID
+            } else if let targetHeading = pendingHeadingID ?? savedHeading ?? selectedHeadingID {
                 let encoded = targetHeading.replacingOccurrences(of: "'", with: "\\'")
                 webView.evaluateJavaScript("window.keenScrollTo('\(encoded)'); window.scrollBy(0, \(savedOffset));")
                 self.savedHeading = nil
@@ -138,6 +163,9 @@ struct MarkdownWebView: NSViewRepresentable {
                     let encoded = headingID.replacingOccurrences(of: "'", with: "\\'")
                     _ = try? await webView.evaluateJavaScript("window.keenScrollTo('\(encoded)')")
                 } else {
+                    if let scrollY = try? await webView.evaluateJavaScript("window.scrollY") as? Double {
+                        onScrollPositionChanged(sourceURL, scrollY)
+                    }
                     openLocalMarkdown(target.fileURL, target.headingID)
                 }
             } else if ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {
