@@ -68,6 +68,34 @@ private struct KeenCommands: Commands {
                 .keyboardShortcut(.tab, modifiers: [.control, .shift])
                 .disabled(store.openDocuments.count < 2)
             Divider()
+            Menu("打开的文件") {
+                ForEach(store.openDocuments) { document in
+                    Button {
+                        store.select(document)
+                    } label: {
+                        if store.selectedDocument == document {
+                            Label(document.title, systemImage: "checkmark")
+                        } else {
+                            Text(document.title)
+                        }
+                    }
+                }
+            }
+            .disabled(store.openDocuments.isEmpty)
+            Button("固定当前预览") {
+                if let document = store.selectedDocument { store.pin(document) }
+            }
+            .keyboardShortcut("p", modifiers: [.command, .option])
+            .disabled(store.selectedDocument.map(store.isPreview) != true)
+            Button("关闭其它文件") {
+                if let document = store.selectedDocument { store.closeOthers(keeping: document) }
+            }
+            .disabled(store.openDocuments.count <= 1)
+            Button("关闭右侧文件") {
+                if let document = store.selectedDocument { store.closeToRight(of: document) }
+            }
+            .disabled(store.selectedDocument.map(store.hasDocumentsToRight) != true)
+            Divider()
             Button("切换到标签 1") { store.selectTab(at: 1) }.keyboardShortcut("1").disabled(store.openDocuments.count < 1)
             Button("切换到标签 2") { store.selectTab(at: 2) }.keyboardShortcut("2").disabled(store.openDocuments.count < 2)
             Button("切换到标签 3") { store.selectTab(at: 3) }.keyboardShortcut("3").disabled(store.openDocuments.count < 3)

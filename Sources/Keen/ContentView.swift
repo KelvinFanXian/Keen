@@ -17,15 +17,8 @@ struct ContentView: View {
                     .frame(minWidth: 190, idealWidth: 240, maxWidth: 360)
             }
 
-            VStack(spacing: 0) {
-                if store.openDocuments.count > 1 || store.openDocuments.first.map(store.isPreview) == true {
-                    TabBarView()
-                        .environmentObject(store)
-                    Divider()
-                }
-                reader
-            }
-            .frame(minWidth: 500)
+            reader
+                .frame(minWidth: 500)
 
             if store.showOutline && !store.focusMode {
                 OutlineView()
@@ -575,68 +568,6 @@ private struct EmptyReaderView: View {
                     .padding(.top, 14)
             }
             .padding(40)
-        }
-    }
-}
-
-private struct TabBarView: View {
-    @EnvironmentObject private var store: WorkspaceStore
-
-    var body: some View {
-        if !store.openDocuments.isEmpty {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 2) {
-                        ForEach(store.openDocuments) { document in
-                            HStack(spacing: 6) {
-                                Button { store.select(document) } label: {
-                                    Text(document.title)
-                                        .italic(store.isPreview(document))
-                                }
-                                    .buttonStyle(.plain)
-                                    .lineLimit(1)
-                                Button { store.close(document) } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 9, weight: .bold))
-                                }
-                                .buttonStyle(.borderless)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(store.selectedDocument == document ? Color.accentColor.opacity(0.13) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .id(document.id)
-                            .simultaneousGesture(
-                                TapGesture(count: 2).onEnded { store.pin(document) }
-                            )
-                            .contextMenu {
-                                if store.isPreview(document) {
-                                    Button("固定标签") { store.pin(document) }
-                                    Divider()
-                                }
-                                Button("关闭") { store.close(document) }
-                                Button("关闭其它") { store.closeOthers(keeping: document) }
-                                    .disabled(store.openDocuments.count <= 1)
-                                Button("关闭右侧") { store.closeToRight(of: document) }
-                                    .disabled(!store.hasDocumentsToRight(of: document))
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                }
-                .frame(height: 32)
-                .background(.bar)
-                .onAppear { revealSelection(proxy) }
-                .onChange(of: store.selectedDocument?.id) { _, _ in revealSelection(proxy) }
-            }
-        }
-    }
-
-    private func revealSelection(_ proxy: ScrollViewProxy) {
-        guard let id = store.selectedDocument?.id else { return }
-        withAnimation(.easeOut(duration: 0.16)) {
-            proxy.scrollTo(id, anchor: .trailing)
         }
     }
 }
