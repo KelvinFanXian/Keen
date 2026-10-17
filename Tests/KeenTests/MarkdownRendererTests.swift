@@ -47,7 +47,7 @@ import WebKit
     #expect(result.html.contains("data-style='manuscript'"))
     #expect(result.html.contains("data-style='everforest-light'"))
     #expect(result.html.contains("--bg:#fdf6e3"))
-    #expect(result.html.contains("window.keenConfigure=(theme,style,size,width)"))
+    #expect(result.html.contains("window.keenConfigure=(theme,style,size,width,enableVim)"))
 }
 
 @Test func appliesHistoryWidthsOnlyToMatchingTable() {

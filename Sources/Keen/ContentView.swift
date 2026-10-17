@@ -18,9 +18,11 @@ struct ContentView: View {
             }
 
             VStack(spacing: 0) {
-                TabBarView()
-                    .environmentObject(store)
-                Divider()
+                if store.openDocuments.count > 1 || store.openDocuments.first.map(store.isPreview) == true {
+                    TabBarView()
+                        .environmentObject(store)
+                    Divider()
+                }
                 reader
             }
             .frame(minWidth: 500)
@@ -52,19 +54,11 @@ struct ContentView: View {
                 }
                 .help(store.showExplorer ? "隐藏文件侧栏" : "显示文件侧栏")
             }
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { store.chooseFile() } label: {
                     Image(systemName: "doc.badge.plus")
                 }
-                .help("打开文件")
-                Button { store.showOutline.toggle() } label: {
-                    Image(systemName: "list.bullet.indent")
-                }
-                .help(store.showOutline ? "隐藏大纲" : "显示大纲")
-                Button { store.focusMode.toggle() } label: {
-                    Image(systemName: store.focusMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                }
-                .help(store.focusMode ? "退出专注阅读" : "专注阅读")
+                .help("打开文件（⌘O）")
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
@@ -96,6 +90,8 @@ struct ContentView: View {
         .onChange(of: store.fontSize) { _, _ in store.persistPreferences() }
         .onChange(of: store.readingWidth) { _, _ in store.persistPreferences() }
         .onChange(of: store.showExplorer) { _, _ in store.persistPreferences() }
+        .onChange(of: store.showOutline) { _, _ in store.persistPreferences() }
+        .onChange(of: store.vimNavigationEnabled) { _, _ in store.persistPreferences() }
         .onChange(of: store.showHiddenFiles) { _, _ in store.persistPreferences() }
         .onChange(of: store.showFindBar) { _, isPresented in
             if isPresented {
@@ -143,6 +139,7 @@ struct ContentView: View {
                     readingStyle: store.readingStyle,
                     fontSize: store.fontSize,
                     readingWidth: store.readingWidth,
+                    vimNavigationEnabled: store.vimNavigationEnabled,
                     reloadToken: store.reloadToken,
                     restoreScrollY: store.requestedScrollY,
                     findCommand: findCommand,
@@ -153,11 +150,11 @@ struct ContentView: View {
                     },
                     onScrollPositionChanged: { url, scrollY in
                         store.updateScrollPosition(scrollY, for: url)
+                    },
+                    onFindRequested: {
+                        store.presentFindBar()
                     }
                 )
-                Divider()
-                ReaderStatusBar(document: document)
-                    .environmentObject(store)
             }
         } else if let document = store.selectedDocument {
             DocumentLoadingView(title: document.title)
@@ -538,70 +535,6 @@ private struct PageFindBar: View {
     }
 }
 
-private struct ReaderStatusBar: View {
-    @EnvironmentObject private var store: WorkspaceStore
-    let document: OpenDocument
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Menu {
-                ForEach(ReadingStyle.allCases) { style in
-                    Button {
-                        store.readingStyle = style
-                    } label: {
-                        if store.readingStyle == style {
-                            Label(style.label, systemImage: "checkmark")
-                        } else {
-                            Text(style.label)
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "textformat")
-                    Text(store.readingStyle.label)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 8, weight: .semibold))
-                }
-                .frame(minWidth: 82, alignment: .leading)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help(store.readingStyle.description)
-
-            Divider().frame(height: 14)
-
-            Button { store.adjustFontSize(by: -1) } label: {
-                Image(systemName: "textformat.size.smaller")
-            }
-            .buttonStyle(.borderless)
-            .help("减小字号")
-
-            Text("\(Int(store.fontSize))")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 20)
-
-            Button { store.adjustFontSize(by: 1) } label: {
-                Image(systemName: "textformat.size.larger")
-            }
-            .buttonStyle(.borderless)
-            .help("增大字号")
-
-            Spacer()
-
-            Text(document.url.lastPathComponent)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(.tertiary)
-        }
-        .font(.system(size: 11))
-        .padding(.horizontal, 10)
-        .frame(height: 28)
-        .background(.bar)
-    }
-}
-
 private struct EmptyReaderView: View {
     let openFile: () -> Void
     let openFolder: () -> Void
@@ -669,7 +602,7 @@ private struct TabBarView: View {
                                 .buttonStyle(.borderless)
                             }
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
+                            .padding(.vertical, 5)
                             .background(store.selectedDocument == document ? Color.accentColor.opacity(0.13) : Color.clear)
                             .clipShape(RoundedRectangle(cornerRadius: 6))
                             .id(document.id)
@@ -692,7 +625,7 @@ private struct TabBarView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                 }
-                .frame(height: 39)
+                .frame(height: 32)
                 .background(.bar)
                 .onAppear { revealSelection(proxy) }
                 .onChange(of: store.selectedDocument?.id) { _, _ in revealSelection(proxy) }
@@ -726,6 +659,7 @@ struct PreferencesView: View {
                 Text("阅读宽度")
             }
             Toggle("显示隐藏文件", isOn: $store.showHiddenFiles)
+            Toggle("启用 Vim 风格阅读导航（只读）", isOn: $store.vimNavigationEnabled)
         }
         .padding(20)
         .frame(width: 420)

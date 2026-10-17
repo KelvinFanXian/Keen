@@ -137,7 +137,35 @@ struct MarkdownRenderer {
           const id=window.keenScrollTo(decodeAnchor(href.slice(1)));
           if(id) bridge?.postMessage({type:'heading',id});
         });
-        window.keenConfigure=(theme,style,size,width)=>{ document.documentElement.dataset.theme=theme; document.documentElement.dataset.style=style; document.documentElement.style.setProperty('--font-size',size+'px'); document.documentElement.style.setProperty('--reading-width',width+'px'); };
+        let vimEnabled=false;
+        let pendingGAt=0;
+        document.addEventListener('keydown',event=>{
+          if(!vimEnabled || event.defaultPrevented || event.metaKey || event.altKey || event.isComposing) return;
+          if(event.target?.closest?.('input,textarea,select,[contenteditable="true"]')) return;
+          const page=Math.max(220,window.innerHeight*.5);
+          let destination=null;
+          if(event.ctrlKey){
+            if(event.key==='d') destination=window.scrollY+page;
+            else if(event.key==='u') destination=window.scrollY-page;
+          } else if(!event.shiftKey && event.key==='j') destination=window.scrollY+96;
+          else if(!event.shiftKey && event.key==='k') destination=window.scrollY-96;
+          else if(event.key==='G') destination=document.documentElement.scrollHeight;
+          else if(event.key==='g'){
+            const now=performance.now();
+            if(now-pendingGAt<700) destination=0;
+            pendingGAt=now;
+            if(destination===null){ event.preventDefault(); return; }
+          } else if(event.key==='/'){
+            event.preventDefault();
+            bridge?.postMessage({type:'find'});
+            return;
+          }
+          if(destination===null) return;
+          pendingGAt=0;
+          event.preventDefault();
+          window.scrollTo({top:destination,behavior:'auto'});
+        });
+        window.keenConfigure=(theme,style,size,width,enableVim)=>{ document.documentElement.dataset.theme=theme; document.documentElement.dataset.style=style; document.documentElement.style.setProperty('--font-size',size+'px'); document.documentElement.style.setProperty('--reading-width',width+'px'); vimEnabled=!!enableVim; };
         </script>\(mermaidRuntime)</body></html>
         """
     }

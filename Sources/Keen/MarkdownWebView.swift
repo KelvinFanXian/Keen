@@ -10,6 +10,7 @@ struct MarkdownWebView: NSViewRepresentable {
     let readingStyle: ReadingStyle
     let fontSize: Double
     let readingWidth: Double
+    let vimNavigationEnabled: Bool
     let reloadToken: UUID
     let restoreScrollY: Double?
     let findCommand: PageFindCommand
@@ -17,9 +18,10 @@ struct MarkdownWebView: NSViewRepresentable {
     @Binding var selectedHeadingID: String?
     let openLocalMarkdown: (URL, String?) -> Void
     let onScrollPositionChanged: (URL, Double) -> Void
+    let onFindRequested: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(findResult: $findResult, selectedHeadingID: $selectedHeadingID, sourceURL: sourceURL, openLocalMarkdown: openLocalMarkdown, onScrollPositionChanged: onScrollPositionChanged)
+        Coordinator(findResult: $findResult, selectedHeadingID: $selectedHeadingID, sourceURL: sourceURL, openLocalMarkdown: openLocalMarkdown, onScrollPositionChanged: onScrollPositionChanged, onFindRequested: onFindRequested)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -45,6 +47,7 @@ struct MarkdownWebView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.openLocalMarkdown = openLocalMarkdown
         context.coordinator.onScrollPositionChanged = onScrollPositionChanged
+        context.coordinator.onFindRequested = onFindRequested
         context.coordinator.sourceURL = sourceURL
         context.coordinator.findCommand = findCommand
         if context.coordinator.loadedToken != reloadToken {
@@ -60,7 +63,7 @@ struct MarkdownWebView: NSViewRepresentable {
             context.coordinator.isLoading = true
             webView.loadHTMLString(document.html, baseURL: baseURL)
         }
-        let js = "window.keenConfigure('\(theme.rawValue)', '\(readingStyle.rawValue)', \(fontSize), \(readingWidth));"
+        let js = "window.keenConfigure('\(theme.rawValue)', '\(readingStyle.rawValue)', \(fontSize), \(readingWidth), \(vimNavigationEnabled));"
         context.coordinator.configurationScript = js
         webView.evaluateJavaScript(js)
         if !context.coordinator.isLoading,
@@ -84,6 +87,7 @@ struct MarkdownWebView: NSViewRepresentable {
         var sourceURL: URL
         var openLocalMarkdown: (URL, String?) -> Void
         var onScrollPositionChanged: (URL, Double) -> Void
+        var onFindRequested: () -> Void
         weak var webView: WKWebView?
         var loadedToken: UUID?
         var loadedSourceURL: URL?
@@ -91,18 +95,19 @@ struct MarkdownWebView: NSViewRepresentable {
         var pendingHeadingID: String?
         var pendingScrollY: Double?
         var isLoading = false
-        var configurationScript = "window.keenConfigure('system', 'swiss', 15, 860);"
+        var configurationScript = "window.keenConfigure('system', 'swiss', 15, 860, false);"
         var findCommand = PageFindCommand()
         private var performedFindRevision = -1
         private var savedHeading: String?
         private var savedOffset: Double = 0
 
-        init(findResult: Binding<PageFindResult>, selectedHeadingID: Binding<String?>, sourceURL: URL, openLocalMarkdown: @escaping (URL, String?) -> Void, onScrollPositionChanged: @escaping (URL, Double) -> Void) {
+        init(findResult: Binding<PageFindResult>, selectedHeadingID: Binding<String?>, sourceURL: URL, openLocalMarkdown: @escaping (URL, String?) -> Void, onScrollPositionChanged: @escaping (URL, Double) -> Void, onFindRequested: @escaping () -> Void) {
             _findResult = findResult
             _selectedHeadingID = selectedHeadingID
             self.sourceURL = sourceURL
             self.openLocalMarkdown = openLocalMarkdown
             self.onScrollPositionChanged = onScrollPositionChanged
+            self.onFindRequested = onFindRequested
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -117,6 +122,8 @@ struct MarkdownWebView: NSViewRepresentable {
                 guard !isLoading else { return }
                 guard let y = object["y"] as? Double else { return }
                 onScrollPositionChanged(sourceURL, y)
+            case "find":
+                onFindRequested()
             default:
                 break
             }

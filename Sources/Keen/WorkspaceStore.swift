@@ -27,6 +27,7 @@ final class WorkspaceStore: ObservableObject {
     @Published var showOutline = true
     @Published var focusMode = false
     @Published var showHiddenFiles = false
+    @Published var vimNavigationEnabled = false
     @Published var theme: ReadingTheme = .system
     @Published var readingStyle: ReadingStyle = .swiss
     @Published var fontSize: Double = 15
@@ -109,6 +110,13 @@ final class WorkspaceStore: ObservableObject {
         let index = position - 1
         guard openDocuments.indices.contains(index) else { return }
         select(openDocuments[index])
+    }
+
+    func selectAdjacentTab(_ offset: Int) {
+        guard !openDocuments.isEmpty, let selectedDocument,
+              let index = openDocuments.firstIndex(of: selectedDocument) else { return }
+        let next = (index + offset + openDocuments.count) % openDocuments.count
+        select(openDocuments[next])
     }
 
     func openFolder(_ url: URL) {
@@ -364,6 +372,8 @@ final class WorkspaceStore: ObservableObject {
         defaults.set(fontSize, forKey: "fontSize")
         defaults.set(readingWidth, forKey: "readingWidth")
         defaults.set(showExplorer, forKey: "showExplorer")
+        defaults.set(showOutline, forKey: "showOutline")
+        defaults.set(vimNavigationEnabled, forKey: "vimNavigationEnabled")
         defaults.set(showHiddenFiles, forKey: "showHiddenFiles")
     }
 
@@ -463,6 +473,8 @@ final class WorkspaceStore: ObservableObject {
         if defaults.object(forKey: "fontSize") != nil { fontSize = defaults.double(forKey: "fontSize") }
         if defaults.object(forKey: "readingWidth") != nil { readingWidth = defaults.double(forKey: "readingWidth") }
         if defaults.object(forKey: "showExplorer") != nil { showExplorer = defaults.bool(forKey: "showExplorer") }
+        if defaults.object(forKey: "showOutline") != nil { showOutline = defaults.bool(forKey: "showOutline") }
+        vimNavigationEnabled = defaults.bool(forKey: "vimNavigationEnabled")
         showHiddenFiles = defaults.bool(forKey: "showHiddenFiles")
     }
 
