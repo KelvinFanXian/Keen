@@ -77,7 +77,7 @@ import WebKit
     #expect(result.html.contains("table.issue-table th:nth-child(1)"))
 }
 
-@Test func blocksRemoteAndTraversingImages() {
+@Test func rendersRemoteImagesAndBlocksUnsafeSources() {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     let images = directory.appendingPathComponent("images", isDirectory: true)
     try? FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
@@ -85,14 +85,24 @@ import WebKit
     try? Data([0x89, 0x50, 0x4e, 0x47]).write(to: images.appendingPathComponent("diagram.png"))
     let source = """
     ![remote](https://example.com/a.png)
+    ![insecure](http://example.com/b.png)
+    ![scheme-relative](//example.com/c.png)
+    ![script](javascript:alert(1))
+    ![file](file:///tmp/private.png)
     ![traverse](../secret.png)
     ![local](images/diagram.png)
     """
     let result = MarkdownRenderer().render(source: source, baseURL: directory)
-    #expect(!result.html.contains("src=\"https://example.com"))
+    #expect(result.html.contains("src=\"https://example.com/a.png\" alt=\"remote\" data-remote-image"))
+    #expect(result.html.contains("src=\"http://example.com/b.png\" alt=\"insecure\" data-remote-image"))
+    #expect(result.html.contains("src=\"https://example.com/c.png\" alt=\"scheme-relative\" data-remote-image"))
+    #expect(!result.html.contains("src=\"javascript:"))
+    #expect(!result.html.contains("src=\"file:"))
     #expect(!result.html.contains("src=\"../secret.png"))
     #expect(result.html.contains("src=\"keen-local-image:"))
     #expect(result.html.contains("images/diagram.png"))
+    #expect(result.html.contains("img.addEventListener('error',showFailure"))
+    #expect(result.html.contains("fallback.append(link)"))
 }
 
 @Test func loadsChineseNamedImagesOnlyInsideDocumentDirectory() throws {
@@ -132,6 +142,22 @@ func webViewLoadsLocalImageResource() async throws {
         if width > 0 { break }
     }
     #expect(width == 1)
+}
+
+@MainActor
+@Test(.enabled(if: ProcessInfo.processInfo.environment["KEEN_WEBKIT_INTEGRATION"] == "1"))
+func webViewLoadsRemoteImage() async throws {
+    let remoteURL = "https://oss-kelvinvan.oss-cn-chengdu.aliyuncs.com/img/image-20220802173323332.png"
+    let document = MarkdownRenderer().render(source: "![远程图片](\(remoteURL))", baseURL: FileManager.default.temporaryDirectory)
+    let webView = WKWebView(frame: .init(x: 0, y: 0, width: 100, height: 100))
+    webView.loadHTMLString(document.html, baseURL: FileManager.default.temporaryDirectory)
+    var width = 0
+    for _ in 0..<100 {
+        try await Task.sleep(for: .milliseconds(100))
+        width = (try? await webView.evaluateJavaScript("document.images[0]?.naturalWidth") as? Int) ?? 0
+        if width > 0 { break }
+    }
+    #expect(width > 0)
 }
 
 @Test func loadsMermaidOnlyWhenNeeded() {

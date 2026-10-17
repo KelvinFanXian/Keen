@@ -98,6 +98,22 @@ struct MarkdownRenderer {
         <script>
         const bridge = window.webkit?.messageHandlers?.keen;
         document.querySelectorAll('pre').forEach(pre => { const button=document.createElement('button'); button.className='copy-code'; button.textContent='复制'; button.onclick=()=>navigator.clipboard.writeText(pre.querySelector('code')?.innerText||''); pre.appendChild(button); });
+        document.querySelectorAll('img[data-remote-image]').forEach(img=>{
+          const showFailure=()=>{
+            if(!img.isConnected) return;
+            const fallback=document.createElement('span');
+            fallback.className='missing-image';
+            fallback.append('图片加载失败：');
+            const link=document.createElement('a');
+            link.href=img.src;
+            link.textContent=img.alt||img.src;
+            link.title='在浏览器中打开原图';
+            fallback.append(link);
+            img.replaceWith(fallback);
+          };
+          img.addEventListener('error',showFailure,{once:true});
+          if(img.complete && !img.naturalWidth) showFailure();
+        });
         const headings=[...document.querySelectorAll('h1,h2,h3,h4,h5,h6')];
         const observer=new IntersectionObserver(entries=>{ const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top); if(visible[0]) bridge?.postMessage({type:'heading',id:visible[0].target.id}); }, {rootMargin:'-5% 0px -78% 0px',threshold:[0,1]});
         headings.forEach(h=>observer.observe(h));
@@ -258,9 +274,11 @@ private struct HTMLBuilder {
             let href = link.destination.map(escapeAttribute) ?? ""
             return "<a href=\"\(href)\">\(renderChildren(link))</a>"
         case let image as Markdown.Image:
-            let src = image.source.flatMap(safeImageSource).map(escapeAttribute) ?? ""
+            let source = image.source.flatMap(safeImageSource)
+            let src = source.map { escapeAttribute($0.url) } ?? ""
             let alt = escapeAttribute(plainText(image))
-            return src.isEmpty ? "<span class=\"missing-image\">[图片不可用：\(alt)]</span>" : "<img src=\"\(src)\" alt=\"\(alt)\">"
+            let remoteMarker = source?.isRemote == true ? " data-remote-image" : ""
+            return src.isEmpty ? "<span class=\"missing-image\">[图片不可用：\(alt)]</span>" : "<img src=\"\(src)\" alt=\"\(alt)\"\(remoteMarker)>"
         case let table as Table:
             return renderTable(table)
         case let list as UnorderedList:
@@ -342,7 +360,17 @@ private struct HTMLBuilder {
 
     private func escapeAttribute(_ value: String) -> String { escape(value) }
 
-    private func safeImageSource(_ value: String) -> String? {
-        LocalImageResource.url(for: value, relativeTo: baseURL)?.absoluteString
+    private func safeImageSource(_ value: String) -> (url: String, isRemote: Bool)? {
+        let candidate = value.hasPrefix("//") ? "https:" + value : value
+        if let components = URLComponents(string: candidate), let scheme = components.scheme?.lowercased() {
+            guard ["https", "http"].contains(scheme),
+                  components.host?.isEmpty == false,
+                  components.user == nil,
+                  components.password == nil,
+                  let url = components.url else { return nil }
+            return (url.absoluteString, true)
+        }
+        guard let url = LocalImageResource.url(for: value, relativeTo: baseURL) else { return nil }
+        return (url.absoluteString, false)
     }
 }
