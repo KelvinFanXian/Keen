@@ -662,12 +662,14 @@ private struct TabBarView: View {
                                         .lineLimit(1)
                                 }
                                 .buttonStyle(.plain)
+                                .focusEffectDisabled()
 
                                 Button { store.close(document) } label: {
                                     Image(systemName: "xmark")
                                         .font(.system(size: 9, weight: .medium))
                                 }
                                 .buttonStyle(.plain)
+                                .focusEffectDisabled()
                                 .help("关闭文件")
                             }
                             .padding(.horizontal, 10)
