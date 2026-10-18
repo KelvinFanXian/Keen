@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -7,52 +8,65 @@ struct ContentView: View {
     @State private var findQuery = ""
     @State private var findCommand = PageFindCommand()
     @State private var findResult = PageFindResult()
+    @State private var explorerWidth: CGFloat = 240
+    @State private var outlineWidth: CGFloat = 180
+    @State private var explorerDragStart: CGFloat?
+    @State private var outlineDragStart: CGFloat?
+    @State private var isFullScreen = false
     @FocusState private var findFieldFocused: Bool
 
     var body: some View {
-        HSplitView {
+        HStack(spacing: 0) {
             if store.showExplorer && !store.focusMode {
                 ExplorerView()
                     .environmentObject(store)
-                    .frame(minWidth: 190, idealWidth: 240, maxWidth: 360)
+                    .frame(width: explorerWidth)
+                    .padding(.top, isFullScreen ? 0 : 36)
+                    .background(Color(red: 0.968, green: 0.970, blue: 0.972))
+                splitDivider {
+                    startExplorerResize($0)
+                } onEnd: {
+                    explorerDragStart = nil
+                }
             }
 
-            reader
-                .frame(minWidth: 500)
+            VStack(spacing: 0) {
+                if !isFullScreen {
+                    TabBarView()
+                        .environmentObject(store)
+                }
+                reader
+            }
+            .frame(minWidth: 400, maxWidth: .infinity)
 
             if store.showOutline && !store.focusMode {
-                OutlineView()
-                    .environmentObject(store)
-                    .frame(minWidth: 170, idealWidth: 260)
+                splitDivider {
+                    startOutlineResize($0)
+                } onEnd: {
+                    outlineDragStart = nil
+                }
+                VStack(spacing: 0) {
+                    if !isFullScreen {
+                        HeaderControls()
+                            .environmentObject(store)
+                    }
+                    OutlineView()
+                        .environmentObject(store)
+                }
+                .frame(width: outlineWidth)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(edges: .top)
+        .background(WindowAppearance(isFullScreen: $isFullScreen, store: store))
         .navigationTitle(store.selectedDocument?.title ?? "Keen")
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                Button { store.navigateBack() } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .disabled(!store.canNavigateBack)
-                .help("后退（⌘[）")
-
-                Button { store.navigateForward() } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .disabled(!store.canNavigateForward)
-                .help("前进（⌘]）")
-
-                Button { store.showExplorer.toggle() } label: {
-                    Image(systemName: "sidebar.left")
-                }
-                .help(store.showExplorer ? "隐藏文件侧栏" : "显示文件侧栏")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button { store.chooseFile() } label: {
-                    Image(systemName: "doc.badge.plus")
-                }
-                .help("打开文件（⌘O）")
-            }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
+            guard let window = notification.object as? NSWindow, window == NSApp.keyWindow else { return }
+            isFullScreen = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
+            guard let window = notification.object as? NSWindow, window == NSApp.keyWindow else { return }
+            isFullScreen = false
         }
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             for provider in providers {
@@ -78,8 +92,6 @@ struct ContentView: View {
                 store.openFile(url)
             }
         }
-        .onChange(of: store.theme) { _, _ in store.persistPreferences() }
-        .onChange(of: store.readingStyle) { _, _ in store.persistPreferences() }
         .onChange(of: store.fontSize) { _, _ in store.persistPreferences() }
         .onChange(of: store.readingWidth) { _, _ in store.persistPreferences() }
         .onChange(of: store.showExplorer) { _, _ in store.persistPreferences() }
@@ -103,6 +115,35 @@ struct ContentView: View {
             WorkspaceFileSearchView()
                 .environmentObject(store)
         }
+    }
+
+    private func splitDivider(
+        onDrag: @escaping (CGFloat) -> Void,
+        onEnd: @escaping () -> Void
+    ) -> some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .overlay {
+                Color.clear
+                    .frame(width: 9)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { onDrag($0.translation.width) }
+                            .onEnded { _ in onEnd() }
+                    )
+            }
+    }
+
+    private func startExplorerResize(_ translation: CGFloat) {
+        if explorerDragStart == nil { explorerDragStart = explorerWidth }
+        explorerWidth = min(500, max(180, (explorerDragStart ?? explorerWidth) + translation))
+    }
+
+    private func startOutlineResize(_ translation: CGFloat) {
+        if outlineDragStart == nil { outlineDragStart = outlineWidth }
+        outlineWidth = min(600, max(140, (outlineDragStart ?? outlineWidth) - translation))
     }
 
     @ViewBuilder
@@ -146,6 +187,22 @@ struct ContentView: View {
                     },
                     onFindRequested: {
                         store.presentFindBar()
+                    },
+                    onVimCommand: { command in
+                        switch command {
+                        case .nextFind:
+                            requestVimFind(backwards: false)
+                        case .previousFind:
+                            requestVimFind(backwards: true)
+                        case .back:
+                            store.navigateBack()
+                        case .forward:
+                            store.navigateForward()
+                        case .nextTab:
+                            store.selectAdjacentTab(1)
+                        case .previousTab:
+                            store.selectAdjacentTab(-1)
+                        }
                     }
                 )
             }
@@ -163,11 +220,72 @@ struct ContentView: View {
         findCommand.request(query: findQuery, backwards: backwards)
     }
 
+    private func requestVimFind(backwards: Bool) {
+        guard !findQuery.isEmpty else { return }
+        if !findCommand.active { findCommand.activate(query: findQuery) }
+        requestFind(backwards: backwards)
+    }
+
     private func focusFindField() {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(60))
             guard store.showFindBar else { return }
             findFieldFocused = true
+        }
+    }
+}
+
+private struct WindowAppearance: NSViewRepresentable {
+    @Binding var isFullScreen: Bool
+    let store: WorkspaceStore
+
+    final class Coordinator {
+        var accessory: NSTitlebarAccessoryViewController?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { configure(view.window, coordinator: context.coordinator) }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { configure(view.window, coordinator: context.coordinator) }
+    }
+
+    static func dismantleNSView(_ view: NSView, coordinator: Coordinator) {
+        guard let window = view.window,
+              let accessory = coordinator.accessory,
+              let index = window.titlebarAccessoryViewControllers.firstIndex(of: accessory) else { return }
+        window.removeTitlebarAccessoryViewController(at: index)
+        coordinator.accessory = nil
+    }
+
+    private func configure(_ window: NSWindow?, coordinator: Coordinator) {
+        guard let window else { return }
+        window.styleMask.insert(.fullSizeContentView)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.backgroundColor = .white
+        let actualFullScreen = window.styleMask.contains(.fullScreen)
+        if isFullScreen != actualFullScreen {
+            isFullScreen = actualFullScreen
+        }
+        if actualFullScreen && coordinator.accessory == nil {
+            let accessory = NSTitlebarAccessoryViewController()
+            accessory.layoutAttribute = .right
+            let controls = NSHostingView(rootView: HeaderControlsButtons().environmentObject(store))
+            controls.frame = NSRect(x: 0, y: 0, width: 72, height: 36)
+            accessory.view = controls
+            window.addTitlebarAccessoryViewController(accessory)
+            coordinator.accessory = accessory
+        } else if !actualFullScreen, let accessory = coordinator.accessory {
+            if let index = window.titlebarAccessoryViewControllers.firstIndex(of: accessory) {
+                window.removeTitlebarAccessoryViewController(at: index)
+            }
+            coordinator.accessory = nil
         }
     }
 }
@@ -528,6 +646,124 @@ private struct PageFindBar: View {
     }
 }
 
+private struct TabBarView: View {
+    @EnvironmentObject private var store: WorkspaceStore
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            HStack(spacing: 0) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 3) {
+                        ForEach(store.openDocuments) { document in
+                            HStack(spacing: 6) {
+                                Button { store.select(document) } label: {
+                                    Text(document.title)
+                                        .italic(store.isPreview(document))
+                                        .lineLimit(1)
+                                }
+                                .buttonStyle(.plain)
+
+                                Button { store.close(document) } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 9, weight: .medium))
+                                }
+                                .buttonStyle(.plain)
+                                .help("关闭文件")
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(height: 27)
+                            .background(store.selectedDocument == document ? Color.accentColor.opacity(0.13) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .contextMenu {
+                                if store.isPreview(document) {
+                                    Button("固定标签") { store.pin(document) }
+                                }
+                                Button("关闭") { store.close(document) }
+                                Button("关闭其它") { store.closeOthers(keeping: document) }
+                                    .disabled(store.openDocuments.count <= 1)
+                                Button("关闭右侧") { store.closeToRight(of: document) }
+                                    .disabled(!store.hasDocumentsToRight(of: document))
+                            }
+                            .id(document.id)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                }
+                Spacer(minLength: 0)
+                    .contentShape(Rectangle())
+                    .gesture(WindowDragGesture())
+                if !store.showOutline || store.focusMode {
+                    HeaderControlsButtons()
+                        .environmentObject(store)
+                }
+            }
+            .frame(height: 36)
+            .background(Color(nsColor: .controlBackgroundColor))
+            .onAppear { revealSelection(proxy) }
+            .onChange(of: store.selectedDocument?.id) { _, _ in revealSelection(proxy) }
+        }
+    }
+
+    private func revealSelection(_ proxy: ScrollViewProxy) {
+        guard let id = store.selectedDocument?.id else { return }
+        withAnimation(.easeOut(duration: 0.16)) {
+            proxy.scrollTo(id, anchor: .trailing)
+        }
+    }
+}
+
+private struct HeaderControls: View {
+    @EnvironmentObject private var store: WorkspaceStore
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            HeaderControlsButtons()
+                .environmentObject(store)
+        }
+        .frame(height: 36)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+}
+
+private struct HeaderControlsButtons: View {
+    @EnvironmentObject private var store: WorkspaceStore
+
+    var body: some View {
+        HStack(spacing: 4) {
+            button("sidebar.left", help: store.showExplorer && !store.focusMode ? "隐藏文件侧栏（⌘B）" : "显示文件侧栏（⌘B）") {
+                if store.focusMode {
+                    store.focusMode = false
+                    store.showExplorer = true
+                } else {
+                    store.showExplorer.toggle()
+                }
+            }
+            button("list.bullet", help: store.showOutline && !store.focusMode ? "隐藏大纲（⌘L）" : "显示大纲（⌘L）") {
+                if store.focusMode {
+                    store.focusMode = false
+                    store.showOutline = true
+                } else {
+                    store.showOutline.toggle()
+                }
+            }
+        }
+        .padding(.trailing, 8)
+    }
+
+    private func button(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
 private struct EmptyReaderView: View {
     let openFile: () -> Void
     let openFolder: () -> Void
@@ -577,12 +813,6 @@ struct PreferencesView: View {
 
     var body: some View {
         Form {
-            Picker("阅读样式", selection: $store.readingStyle) {
-                ForEach(ReadingStyle.allCases) { style in Text(style.label).tag(style) }
-            }
-            Picker("外观", selection: $store.theme) {
-                ForEach(ReadingTheme.allCases) { theme in Text(theme.label).tag(theme) }
-            }
             Slider(value: $store.fontSize, in: 12...24, step: 1) {
                 Text("正文大小")
             } minimumValueLabel: { Text("12") } maximumValueLabel: { Text("24") }

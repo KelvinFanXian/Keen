@@ -32,46 +32,21 @@ private final class ExplorerTreeState: ObservableObject {
 
 struct ExplorerView: View {
     @EnvironmentObject private var store: WorkspaceStore
-    @State private var searchText = ""
-    @State private var searchResults: [FileNode] = []
-    @State private var searchTask: Task<Void, Never>?
     @State private var showWorkspaceMenu = false
     @StateObject private var treeState = ExplorerTreeState()
     @FocusState private var treeFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("搜索文件", text: $searchText)
-                    .textFieldStyle(.plain)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 39)
-            Divider()
-
             if let root = store.rootNode {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
-                            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                FileNodeRow(node: root, depth: 0, treeState: treeState) {
-                                    treeFocused = true
-                                }
-                                    .environmentObject(store)
-                                    .id(root.id)
-                            } else if searchResults.isEmpty {
-                                ContentUnavailableView.search(text: searchText)
-                                    .padding(.top, 24)
-                            } else {
-                                ForEach(searchResults) { result in
-                                    FileNodeRow(node: result, depth: 0, treeState: treeState) {
-                                        treeFocused = true
-                                    }
-                                        .environmentObject(store)
-                                }
+                            FileNodeRow(node: root, depth: 0, treeState: treeState) {
+                                treeFocused = true
                             }
+                                .environmentObject(store)
+                                .id(root.id)
                         }
                         .padding(.vertical, 6)
                     }
@@ -112,7 +87,7 @@ struct ExplorerView: View {
                     .environmentObject(store)
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color(red: 0.968, green: 0.970, blue: 0.972))
         .focusable()
         .focused($treeFocused)
         .focusEffectDisabled()
@@ -122,43 +97,18 @@ struct ExplorerView: View {
             activateCursor()
             return .handled
         }
+        .onKeyPress("j") { vimMove(.down) }
+        .onKeyPress("k") { vimMove(.up) }
+        .onKeyPress("h") { vimMove(.left) }
+        .onKeyPress("l") { vimMove(.right) }
         .onAppear { treeState.reset(rootURL: store.rootNode?.url) }
-        .onChange(of: searchText) { _, query in scheduleSearch(query) }
-        .onChange(of: store.showHiddenFiles) { _, _ in scheduleSearch(searchText) }
         .onChange(of: store.rootNode?.id) { _, _ in
-            scheduleSearch(searchText)
             treeState.reset(rootURL: store.rootNode?.url)
-        }
-        .onDisappear { searchTask?.cancel() }
-    }
-
-    private func scheduleSearch(_ query: String) {
-        searchTask?.cancel()
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let root = store.rootNode else {
-            searchResults = []
-            return
-        }
-        searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(160))
-            guard !Task.isCancelled else { return }
-            let rootURL = root.url
-            let showHidden = store.showHiddenFiles
-            let urls = await Task.detached(priority: .userInitiated) {
-                FileNode.searchMarkdownFileURLs(
-                    rootURL: rootURL,
-                    matching: trimmed,
-                    showHidden: showHidden
-                )
-            }.value
-            guard !Task.isCancelled else { return }
-            searchResults = urls.map { FileNode(url: $0, isDirectory: false) }
         }
     }
 
     private func revealCurrentDocument(using proxy: ScrollViewProxy) {
-        guard searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let url = store.selectedDocument?.url.standardizedFileURL else { return }
+        guard let url = store.selectedDocument?.url.standardizedFileURL else { return }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(120))
             withAnimation(.easeOut(duration: 0.18)) {
@@ -200,6 +150,12 @@ struct ExplorerView: View {
         }
     }
 
+    private func vimMove(_ direction: MoveCommandDirection) -> KeyPress.Result {
+        guard treeFocused, store.vimNavigationEnabled else { return .ignored }
+        moveSelection(direction)
+        return .handled
+    }
+
     private func activateCursor() {
         let nodes = visibleNodes()
         guard let cursor = treeState.cursorURL?.standardizedFileURL,
@@ -209,9 +165,6 @@ struct ExplorerView: View {
     }
 
     private func visibleNodes() -> [FileNode] {
-        if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return searchResults
-        }
         guard let root = store.rootNode else { return [] }
         var result: [FileNode] = []
         appendVisible(root, to: &result)
@@ -414,6 +367,7 @@ private struct FileNodeRow: View {
                 Text(node.name)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .foregroundStyle(node.isDirectory ? Color.primary.opacity(0.67) : Color.primary.opacity(0.76))
                 Spacer(minLength: 0)
             }
             .padding(.leading, CGFloat(depth) * 13 + 8)
@@ -493,9 +447,9 @@ private struct FileNodeRow: View {
     }
 
     private var rowBackground: Color {
-        if hasCursor { return Color.accentColor.opacity(0.24) }
+        if hasCursor { return Color.black.opacity(0.10) }
         if store.selectedDocument?.url.standardizedFileURL == node.url.standardizedFileURL {
-            return Color.accentColor.opacity(0.11)
+            return Color.black.opacity(0.055)
         }
         return .clear
     }

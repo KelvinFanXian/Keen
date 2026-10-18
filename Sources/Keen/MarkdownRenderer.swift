@@ -25,19 +25,13 @@ struct MarkdownRenderer {
         <!doctype html>
         <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-        :root { color-scheme:light dark; --bg:#fff; --fg:#1d1d1f; --muted:#707780; --line:#e1e4e8; --soft-line:#eceef1; --code:#f5f6f7; --link:#1769c2; --quote:#60606a; --table-head:#f7f8f9; --body-font:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif; --heading-font:var(--body-font); --body-leading:1.72; --paragraph-gap:1em; --heading-weight:650; }
-        html[data-theme='dark'] { --bg:#1e2024; --fg:#d9dce1; --muted:#969da7; --line:#3b4047; --soft-line:#30343a; --code:#292d33; --link:#71a9ed; --quote:#a6adb6; --table-head:#262a2f; }
-        @media (prefers-color-scheme:dark) { html[data-theme='system'] { --bg:#1e2024; --fg:#d9dce1; --muted:#969da7; --line:#3b4047; --soft-line:#30343a; --code:#292d33; --link:#71a9ed; --quote:#a6adb6; --table-head:#262a2f; } }
-        html[data-style='everforest-light'] { color-scheme:light; --bg:#fdf6e3; --fg:#5c6a72; --muted:#829181; --line:#d8d5b8; --soft-line:#e3dec4; --code:#f3ead3; --link:#35a77c; --quote:#667b74; --table-head:#f2edda; --body-leading:1.66; --paragraph-gap:.9em; --heading-weight:700; }
+        :root { color-scheme:light; --bg:#fff; --fg:#1d1d1f; --muted:#707780; --line:#e1e4e8; --soft-line:#eceef1; --code:#f5f6f7; --link:#1769c2; --quote:#60606a; --table-head:#f7f8f9; --body-font:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif; --heading-font:var(--body-font); --body-leading:1.72; --paragraph-gap:1em; --heading-weight:650; }
         html[data-style='swiss'] { --body-font:"Helvetica Neue",Helvetica,Arial,Verdana,"PingFang SC",sans-serif; --heading-font:var(--body-font); --body-leading:1.6; --paragraph-gap:1.5rem; --heading-weight:600; }
-        html[data-style='ink'] { --body-font:"Avenir Next",-apple-system,"PingFang SC",sans-serif; --body-leading:1.6; --paragraph-gap:.84em; --heading-weight:650; }
-        html[data-style='manuscript'] { --body-font:"New York",Georgia,"Songti SC",serif; --heading-font:"New York",Georgia,"Songti SC",serif; --body-leading:1.86; --paragraph-gap:1.16em; --heading-weight:700; }
         * { box-sizing:border-box; }
         html,body { margin:0; min-height:100%; background:var(--bg); color:var(--fg); }
         body { font-family:var(--body-font); font-size:var(--font-size,15px); line-height:var(--body-leading); letter-spacing:.002em; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
         main { width:min(var(--reading-width,860px), calc(100vw - 80px)); margin:0 auto; padding:48px 0 96px; }
-        html[data-style='swiss'] main { width:calc(100vw - 60px); max-width:none; margin:30px auto 0; padding:32px 32px 96px; }
-        html[data-style='everforest-light'] main { width:calc(100vw - 96px); padding-top:34px; }
+        html[data-style='swiss'] main { width:calc(100vw - 60px); max-width:none; margin:0 auto; padding:50px 32px 96px; }
         h1,h2,h3,h4,h5,h6 { font-family:var(--heading-font); color:var(--fg); font-weight:var(--heading-weight); line-height:1.3; margin:1.72em 0 .66em; letter-spacing:-.018em; scroll-margin-top:24px; }
         h1 { font-size:2.18em; margin-top:.1em; padding-bottom:.38em; border-bottom:1px solid var(--line); } h2 { font-size:1.72em; padding-bottom:.28em; border-bottom:1px solid var(--soft-line); }
         h3 { font-size:1.22em; } h4 { font-size:1.08em; }
@@ -50,7 +44,6 @@ struct MarkdownRenderer {
         html[data-style='swiss'] h5 { font-size:1.25rem; }
         p { margin:0 0 var(--paragraph-gap); } strong { font-weight:650; } a { color:var(--link); text-decoration:none; cursor:pointer; } a:hover { text-decoration:underline; text-underline-offset:2px; }
         blockquote { margin:1.2em 0; padding:.18em 1.05em; color:var(--quote); border-left:3px solid var(--line); }
-        html[data-style='everforest-light'] blockquote { padding:.45em .9em; border-left:4px solid #a6b49a; background:#f3efd6; }
         code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.87em; background:var(--code); border-radius:4px; padding:.14em .34em; }
         pre { position:relative; overflow:auto; margin:1.2em 0; padding:15px 17px; border:1px solid var(--line); border-radius:6px; background:var(--code); line-height:1.5; }
         pre code { padding:0; background:none; white-space:pre; }
@@ -75,10 +68,8 @@ struct MarkdownRenderer {
         html[data-style='swiss'] tbody tr:nth-child(odd) td { background:rgba(0,0,0,.01); }
         html[data-style='swiss'] tbody tr:nth-child(even) td { background:rgba(0,0,0,.02); }
         td code { padding:0; background:transparent; color:inherit; }
-        html[data-style='swiss'] .table-wrap,html[data-style='everforest-light'] .table-wrap { width:100%; left:auto; transform:none; }
+        html[data-style='swiss'] .table-wrap { width:100%; left:auto; transform:none; }
         html[data-style='swiss'] .table-wrap { margin:1.5rem 0; }
-        html[data-style='everforest-light'] td code { padding:.06em .25em; color:#d69900; background:#f3ead3; }
-        html[data-style='everforest-light'] a { color:#35a77c; }
         html[data-style='swiss'] table.history-table,table.history-table { width:100%; table-layout:auto; }
         table.history-table th:nth-child(1),table.history-table td:nth-child(1) { min-width:180px; overflow-wrap:normal; word-break:normal; }
         table.history-table th:nth-child(2),table.history-table td:nth-child(2) { min-width:70px; }
@@ -144,17 +135,34 @@ struct MarkdownRenderer {
           if(event.target?.closest?.('input,textarea,select,[contenteditable="true"]')) return;
           const page=Math.max(220,window.innerHeight*.5);
           let destination=null;
+          const now=performance.now();
+          const sendVimCommand=command=>{ pendingGAt=0; event.preventDefault(); bridge?.postMessage({type:'vim',command}); };
+          if(!event.ctrlKey && pendingGAt && now-pendingGAt<1500){
+            pendingGAt=0;
+            if(event.key==='g'){
+              event.preventDefault();
+              window.scrollTo({top:0,behavior:'auto'});
+              return;
+            }
+            else if(event.key==='t'){ sendVimCommand('nextTab'); return; }
+            else if(event.key==='T'){ sendVimCommand('previousTab'); return; }
+          }
           if(event.ctrlKey){
             if(event.key==='d') destination=window.scrollY+page;
             else if(event.key==='u') destination=window.scrollY-page;
+            else if(event.key==='f') destination=window.scrollY+window.innerHeight;
+            else if(event.key==='b') destination=window.scrollY-window.innerHeight;
+            else if(event.key==='o'){ sendVimCommand('back'); return; }
+            else if(event.key==='i'){ sendVimCommand('forward'); return; }
           } else if(!event.shiftKey && event.key==='j') destination=window.scrollY+96;
           else if(!event.shiftKey && event.key==='k') destination=window.scrollY-96;
           else if(event.key==='G') destination=document.documentElement.scrollHeight;
+          else if(event.key==='n'){ sendVimCommand('nextFind'); return; }
+          else if(event.key==='N'){ sendVimCommand('previousFind'); return; }
           else if(event.key==='g'){
-            const now=performance.now();
-            if(now-pendingGAt<700) destination=0;
             pendingGAt=now;
-            if(destination===null){ event.preventDefault(); return; }
+            event.preventDefault();
+            return;
           } else if(event.key==='/'){
             event.preventDefault();
             bridge?.postMessage({type:'find'});
@@ -174,13 +182,10 @@ struct MarkdownRenderer {
     (() => {
       const shells = [...document.querySelectorAll('.mermaid-shell')];
       if (!shells.length || typeof mermaid === 'undefined') return;
-      const dark = document.documentElement.dataset.style !== 'everforest-light' &&
-        (document.documentElement.dataset.theme === 'dark' ||
-        (document.documentElement.dataset.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches));
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
-        theme: dark ? 'dark' : 'neutral',
+        theme: 'neutral',
         suppressErrorRendering: true,
         maxTextSize: 100000
       });

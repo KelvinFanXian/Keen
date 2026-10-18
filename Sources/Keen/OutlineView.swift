@@ -20,6 +20,7 @@ struct OutlineView: View {
                                         .padding(.leading, CGFloat(heading.level - 1) * 11)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 5)
+                                        .contentShape(Rectangle())
                                         .background(store.selectedHeadingID == heading.id ? Color.accentColor.opacity(0.14) : Color.clear)
                                         .clipShape(RoundedRectangle(cornerRadius: 5))
                                 }

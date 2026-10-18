@@ -41,13 +41,22 @@ import WebKit
     #expect(result.html.contains("type=\"checkbox\" checked"))
 }
 
-@Test func includesMarkedInspiredReadingStyles() {
+@Test func usesOnlySwissLightReadingStyle() {
     let result = MarkdownRenderer().render(source: "# 阅读", baseURL: URL(fileURLWithPath: "/tmp/docs"))
-    #expect(result.html.contains("data-style='ink'"))
-    #expect(result.html.contains("data-style='manuscript'"))
-    #expect(result.html.contains("data-style='everforest-light'"))
-    #expect(result.html.contains("--bg:#fdf6e3"))
+    #expect(ReadingStyle.allCases == [.swiss])
+    #expect(ReadingTheme.allCases == [.light])
+    #expect(result.html.contains("data-style='swiss'"))
+    #expect(!result.html.contains("data-style='everforest-light'"))
     #expect(result.html.contains("window.keenConfigure=(theme,style,size,width,enableVim)"))
+}
+
+@Test func vimReaderCommandsStayInReadOnlyWebView() {
+    let result = MarkdownRenderer().render(source: "# 阅读", baseURL: URL(fileURLWithPath: "/tmp/docs"))
+    #expect(result.html.contains("if(!vimEnabled || event.defaultPrevented || event.metaKey || event.altKey || event.isComposing) return"))
+    #expect(result.html.contains("input,textarea,select,[contenteditable="))
+    for command in ["nextFind", "previousFind", "back", "forward", "nextTab", "previousTab"] {
+        #expect(result.html.contains("sendVimCommand('\(command)')"))
+    }
 }
 
 @Test func appliesHistoryWidthsOnlyToMatchingTable() {

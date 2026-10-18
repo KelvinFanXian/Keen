@@ -2,6 +2,15 @@ import AppKit
 import SwiftUI
 import WebKit
 
+enum ReaderVimCommand: String {
+    case nextFind
+    case previousFind
+    case back
+    case forward
+    case nextTab
+    case previousTab
+}
+
 struct MarkdownWebView: NSViewRepresentable {
     let document: RenderedDocument
     let sourceURL: URL
@@ -19,9 +28,10 @@ struct MarkdownWebView: NSViewRepresentable {
     let openLocalMarkdown: (URL, String?) -> Void
     let onScrollPositionChanged: (URL, Double) -> Void
     let onFindRequested: () -> Void
+    let onVimCommand: (ReaderVimCommand) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(findResult: $findResult, selectedHeadingID: $selectedHeadingID, sourceURL: sourceURL, openLocalMarkdown: openLocalMarkdown, onScrollPositionChanged: onScrollPositionChanged, onFindRequested: onFindRequested)
+        Coordinator(findResult: $findResult, selectedHeadingID: $selectedHeadingID, sourceURL: sourceURL, openLocalMarkdown: openLocalMarkdown, onScrollPositionChanged: onScrollPositionChanged, onFindRequested: onFindRequested, onVimCommand: onVimCommand)
     }
 
     func makeNSView(context: Context) -> WKWebView {
@@ -48,6 +58,7 @@ struct MarkdownWebView: NSViewRepresentable {
         context.coordinator.openLocalMarkdown = openLocalMarkdown
         context.coordinator.onScrollPositionChanged = onScrollPositionChanged
         context.coordinator.onFindRequested = onFindRequested
+        context.coordinator.onVimCommand = onVimCommand
         context.coordinator.sourceURL = sourceURL
         context.coordinator.findCommand = findCommand
         if context.coordinator.loadedToken != reloadToken {
@@ -88,6 +99,7 @@ struct MarkdownWebView: NSViewRepresentable {
         var openLocalMarkdown: (URL, String?) -> Void
         var onScrollPositionChanged: (URL, Double) -> Void
         var onFindRequested: () -> Void
+        var onVimCommand: (ReaderVimCommand) -> Void
         weak var webView: WKWebView?
         var loadedToken: UUID?
         var loadedSourceURL: URL?
@@ -95,19 +107,20 @@ struct MarkdownWebView: NSViewRepresentable {
         var pendingHeadingID: String?
         var pendingScrollY: Double?
         var isLoading = false
-        var configurationScript = "window.keenConfigure('system', 'swiss', 15, 860, false);"
+        var configurationScript = "window.keenConfigure('light', 'swiss', 15, 860, false);"
         var findCommand = PageFindCommand()
         private var performedFindRevision = -1
         private var savedHeading: String?
         private var savedOffset: Double = 0
 
-        init(findResult: Binding<PageFindResult>, selectedHeadingID: Binding<String?>, sourceURL: URL, openLocalMarkdown: @escaping (URL, String?) -> Void, onScrollPositionChanged: @escaping (URL, Double) -> Void, onFindRequested: @escaping () -> Void) {
+        init(findResult: Binding<PageFindResult>, selectedHeadingID: Binding<String?>, sourceURL: URL, openLocalMarkdown: @escaping (URL, String?) -> Void, onScrollPositionChanged: @escaping (URL, Double) -> Void, onFindRequested: @escaping () -> Void, onVimCommand: @escaping (ReaderVimCommand) -> Void) {
             _findResult = findResult
             _selectedHeadingID = selectedHeadingID
             self.sourceURL = sourceURL
             self.openLocalMarkdown = openLocalMarkdown
             self.onScrollPositionChanged = onScrollPositionChanged
             self.onFindRequested = onFindRequested
+            self.onVimCommand = onVimCommand
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -124,6 +137,10 @@ struct MarkdownWebView: NSViewRepresentable {
                 onScrollPositionChanged(sourceURL, y)
             case "find":
                 onFindRequested()
+            case "vim":
+                guard let rawCommand = object["command"] as? String,
+                      let command = ReaderVimCommand(rawValue: rawCommand) else { return }
+                onVimCommand(command)
             default:
                 break
             }

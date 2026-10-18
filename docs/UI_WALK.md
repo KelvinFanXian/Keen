@@ -4,6 +4,8 @@
 > 最后更新：2026-10-13  
 > 基线文档：`UI_WALK_SAMPLE.md`、`UI_MERMAID_SAMPLE.md`
 
+> 注：这是 2026-10-13 的历史走查；后续已固定为浅色 Swiss，确定内容区仅三列，并在非全屏恢复多标签栏。当前设计以 `DESIGN_DECISIONS.md` 为准。
+
 ## 本轮结论
 
 已使用真实 Release App 在 1320 × 840 窗口下走查文件树、标签栏、正文、大纲、任务列表、表格和 Mermaid。
@@ -30,7 +32,7 @@
 
 ## 后续走查
 
-- 深色模式下 Mermaid 与代码主题。
+- 浅色 Swiss 下 Mermaid、代码、图片与右上角覆盖的两个侧栏切换按钮；确认没有整行顶栏。
 - 极窄窗口和超长标签名称。
 - 1000+ 标题文档的大纲滚动。
 - Mermaid 复杂 ER、Sequence、Class、State 和 Gantt 图。

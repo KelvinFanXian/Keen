@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -8,10 +9,11 @@ struct KeenApp: App {
         Window("Keen", id: "main") {
             ContentView()
                 .environmentObject(store)
+                .preferredColorScheme(.light)
                 .frame(minWidth: 900, minHeight: 600)
         }
         .defaultSize(width: 1320, height: 840)
-        .windowToolbarStyle(.unifiedCompact)
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .commands {
             KeenCommands(store: store)
@@ -20,6 +22,7 @@ struct KeenApp: App {
         Settings {
             PreferencesView()
                 .environmentObject(store)
+                .preferredColorScheme(.light)
         }
     }
 }
@@ -107,19 +110,8 @@ private struct KeenCommands: Commands {
             Button("切换到标签 9") { store.selectTab(at: 9) }.keyboardShortcut("9").disabled(store.openDocuments.count < 9)
         }
         CommandMenu("阅读") {
-            Menu("阅读样式") {
-                ForEach(ReadingStyle.allCases) { style in
-                    Button {
-                        store.readingStyle = style
-                    } label: {
-                        if store.readingStyle == style {
-                            Label(style.label, systemImage: "checkmark")
-                        } else {
-                            Text(style.label)
-                        }
-                    }
-                }
-            }
+            Button("切换全屏") { NSApp.keyWindow?.toggleFullScreen(nil) }
+                .keyboardShortcut("f", modifiers: [.command, .control])
             Divider()
             Button("增大字号") { store.adjustFontSize(by: 1) }
                 .keyboardShortcut("+")
@@ -131,20 +123,30 @@ private struct KeenCommands: Commands {
             Button(store.focusMode ? "退出专注阅读" : "专注阅读") {
                 store.focusMode.toggle()
             }
-            .keyboardShortcut("f", modifiers: [.command, .option])
-            Button(store.showOutline ? "隐藏大纲" : "显示大纲") {
-                store.showOutline.toggle()
+            .keyboardShortcut("j")
+            Button(store.showOutline && !store.focusMode ? "隐藏大纲" : "显示大纲") {
+                if store.focusMode {
+                    store.focusMode = false
+                    store.showOutline = true
+                } else {
+                    store.showOutline.toggle()
+                }
             }
-            .keyboardShortcut("2", modifiers: [.command, .shift])
-            Button(store.showExplorer ? "隐藏文件侧栏" : "显示文件侧栏") {
-                store.showExplorer.toggle()
+            .keyboardShortcut("l")
+            Button(store.showExplorer && !store.focusMode ? "隐藏文件侧栏" : "显示文件侧栏") {
+                if store.focusMode {
+                    store.focusMode = false
+                    store.showExplorer = true
+                } else {
+                    store.showExplorer.toggle()
+                }
             }
-            .keyboardShortcut("0", modifiers: [.command, .shift])
+            .keyboardShortcut("b")
             Divider()
             Button(store.vimNavigationEnabled ? "关闭 Vim 风格阅读导航" : "启用 Vim 风格阅读导航") {
                 store.vimNavigationEnabled.toggle()
             }
-            .keyboardShortcut("v", modifiers: [.command, .option])
+            .keyboardShortcut("k")
         }
     }
 }

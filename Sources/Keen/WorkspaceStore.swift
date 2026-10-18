@@ -28,8 +28,8 @@ final class WorkspaceStore: ObservableObject {
     @Published var focusMode = false
     @Published var showHiddenFiles = false
     @Published var vimNavigationEnabled = false
-    @Published var theme: ReadingTheme = .system
-    @Published var readingStyle: ReadingStyle = .swiss
+    let theme: ReadingTheme = .light
+    let readingStyle: ReadingStyle = .swiss
     @Published var fontSize: Double = 15
     @Published var readingWidth: Double = 860
     @Published var errorMessage: String?
@@ -367,8 +367,6 @@ final class WorkspaceStore: ObservableObject {
     func resetFontSize() { fontSize = 15; defaults.set(fontSize, forKey: "fontSize") }
 
     func persistPreferences() {
-        defaults.set(theme.rawValue, forKey: "theme")
-        defaults.set(readingStyle.rawValue, forKey: "readingStyle")
         defaults.set(fontSize, forKey: "fontSize")
         defaults.set(readingWidth, forKey: "readingWidth")
         defaults.set(showExplorer, forKey: "showExplorer")
@@ -462,14 +460,6 @@ final class WorkspaceStore: ObservableObject {
     }
 
     private func restorePreferences() {
-        if let raw = defaults.string(forKey: "theme"), let value = ReadingTheme(rawValue: raw) { theme = value }
-        if defaults.integer(forKey: "readingStyleVersion") < 3 {
-            readingStyle = .swiss
-            defaults.set(readingStyle.rawValue, forKey: "readingStyle")
-            defaults.set(3, forKey: "readingStyleVersion")
-        } else if let raw = defaults.string(forKey: "readingStyle"), let value = ReadingStyle(rawValue: raw) {
-            readingStyle = value
-        }
         if defaults.object(forKey: "fontSize") != nil { fontSize = defaults.double(forKey: "fontSize") }
         if defaults.object(forKey: "readingWidth") != nil { readingWidth = defaults.double(forKey: "readingWidth") }
         if defaults.object(forKey: "showExplorer") != nil { showExplorer = defaults.bool(forKey: "showExplorer") }
