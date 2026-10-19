@@ -259,6 +259,7 @@ final class FileNode: Identifiable, Hashable {
 
         var matches: [URL] = []
         for case let child as URL in enumerator {
+            if Task<Never, Never>.isCancelled { break }
             let values = try? child.resourceValues(forKeys: Set(keys))
             if !showHidden && (values?.isHidden == true || child.lastPathComponent.hasPrefix(".")) { continue }
             guard values?.isRegularFile == true,

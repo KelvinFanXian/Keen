@@ -48,7 +48,7 @@ private struct KeenCommands: Commands {
             Button("在页面中查找…") { store.presentFindBar() }
                 .keyboardShortcut("f")
                 .disabled(store.selectedDocument == nil)
-            Button("搜索工作区文件…") { store.presentWorkspaceSearch() }
+            Button("搜索工作区内容…") { store.presentWorkspaceSearch() }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
                 .disabled(store.rootNode == nil)
             Divider()

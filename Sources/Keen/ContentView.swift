@@ -103,6 +103,11 @@ struct ContentView: View {
         .onChange(of: store.showOutline) { _, _ in store.persistPreferences() }
         .onChange(of: store.vimNavigationEnabled) { _, _ in store.persistPreferences() }
         .onChange(of: store.showHiddenFiles) { _, _ in store.persistPreferences() }
+        .onChange(of: store.workspaceFindRequest) { _, _ in
+            findQuery = store.workspaceFindQuery
+            store.showFindBar = true
+            findCommand.activate(query: findQuery)
+        }
         .onChange(of: store.showFindBar) { _, isPresented in
             if isPresented {
                 findCommand.activate(query: findQuery)
@@ -479,27 +484,28 @@ private struct WorkspaceFileSearchView: View {
     @EnvironmentObject private var store: WorkspaceStore
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @State private var indexedURLs: [URL] = []
-    @State private var results: [URL] = []
+    @State private var results: [WorkspaceSearchHit] = []
     @State private var selectedURL: URL?
+    @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var workerTask: Task<[WorkspaceSearchHit], Never>?
     @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
                 HStack {
-                    Text("搜索工作区文件")
+                    Text("搜索工作区内容")
                         .font(.system(size: 17, weight: .semibold))
                     Spacer()
-                    Text("\(results.count) 个结果")
+                    Text(isSearching ? "搜索中…" : "\(results.count) 个结果")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
-                    TextField("输入文件名或相对路径", text: $query)
+                    TextField("搜索 Markdown 正文，也可输入相对路径", text: $query)
                         .textFieldStyle(.plain)
                         .focused($searchFocused)
                         .onSubmit(openSelected)
@@ -514,33 +520,42 @@ private struct WorkspaceFileSearchView: View {
 
             Divider()
 
-            if results.isEmpty {
+            if isSearching {
+                ProgressView("正在搜索工作区…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if results.isEmpty {
                 ContentUnavailableView.search(text: query)
             } else {
-                List(results, id: \.self, selection: $selectedURL) { url in
+                List(results, id: \.url, selection: $selectedURL) { hit in
                     HStack(spacing: 10) {
                         Image(systemName: "doc.text")
                             .foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(url.deletingPathExtension().lastPathComponent)
+                            Text(hit.url.deletingPathExtension().lastPathComponent)
                                 .lineLimit(1)
-                            Text(relativeDirectory(for: url))
+                            Text(hit.relativePath)
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
+                            if let excerpt = hit.excerpt, let line = hit.lineNumber {
+                                Text("第 \(line) 行 · \(excerpt)")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
                         }
                         Spacer(minLength: 0)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 5)
                     .contentShape(Rectangle())
-                    .tag(url)
+                    .tag(hit.url)
                     .onTapGesture {
-                        selectedURL = url
+                        selectedURL = hit.url
                         Task { @MainActor in
                             await Task.yield()
-                            open(url)
+                            open(hit)
                         }
                     }
                 }
@@ -549,7 +564,7 @@ private struct WorkspaceFileSearchView: View {
 
             Divider()
             HStack {
-                Text("按文件名或相对路径匹配  ·  ↑↓ 选择  ·  ↩ 打开")
+                Text("搜索正文与相对路径  ·  ↑↓ 选择  ·  ↩ 打开")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -569,60 +584,54 @@ private struct WorkspaceFileSearchView: View {
             }
         }
         .onChange(of: query) { _, _ in scheduleSearch() }
-        .onDisappear { searchTask?.cancel() }
+        .onDisappear {
+            searchTask?.cancel()
+            workerTask?.cancel()
+        }
     }
 
     private func scheduleSearch() {
         searchTask?.cancel()
+        workerTask?.cancel()
+        guard let rootURL = store.rootNode?.url else { return }
+        isSearching = true
+        results = []
+        selectedURL = nil
+        let needle = query
+        let showHidden = store.showHiddenFiles
         searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(indexedURLs.isEmpty ? 0 : 45))
-            guard !Task.isCancelled, let root = store.rootNode else { return }
-            if indexedURLs.isEmpty {
-                let rootURL = root.url
-                let showHidden = store.showHiddenFiles
-                indexedURLs = await Task.detached(priority: .userInitiated) {
-                    FileNode.searchMarkdownFileURLs(
-                        rootURL: rootURL,
-                        matching: "",
-                        showHidden: showHidden,
-                        limit: 5_000
-                    )
-                }.value
-            }
+            try? await Task.sleep(for: .milliseconds(needle.isEmpty ? 0 : 180))
             guard !Task.isCancelled else { return }
-            let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            results = indexedURLs.filter {
-                needle.isEmpty || relativePath(for: $0).localizedCaseInsensitiveContains(needle)
-            }.prefix(200).map { $0 }
-            selectedURL = results.first
+            let worker = Task.detached(priority: .userInitiated) {
+                WorkspaceTextSearch.search(rootURL: rootURL, query: needle, showHidden: showHidden)
+            }
+            workerTask = worker
+            let found = await worker.value
+            guard !Task.isCancelled, !worker.isCancelled else { return }
+            results = found
+            selectedURL = found.first?.url
+            isSearching = false
         }
     }
 
     private func openSelected() {
-        guard let selectedURL else { return }
-        open(selectedURL)
+        guard let selectedURL, let hit = results.first(where: { $0.url == selectedURL }) else { return }
+        open(hit)
     }
 
-    private func open(_ url: URL) {
+    private func open(_ hit: WorkspaceSearchHit) {
         dismiss()
-        store.openFile(url)
+        store.openFile(hit.url)
+        if hit.lineNumber != nil {
+            store.workspaceFindQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            store.workspaceFindRequest = UUID()
+        }
     }
 
     private func moveSelection(by offset: Int) {
         guard !results.isEmpty else { selectedURL = nil; return }
-        let current = selectedURL.flatMap { results.firstIndex(of: $0) } ?? (offset > 0 ? -1 : 0)
-        selectedURL = results[(current + offset + results.count) % results.count]
-    }
-
-    private func relativePath(for url: URL) -> String {
-        guard let root = store.rootNode?.url.standardizedFileURL else { return url.path }
-        return url.standardizedFileURL.path.replacingOccurrences(of: root.path + "/", with: "")
-    }
-
-    private func relativeDirectory(for url: URL) -> String {
-        let relative = relativePath(for: url)
-        let directory = (relative as NSString).deletingLastPathComponent
-        return directory.isEmpty ? "." : directory
+        let current = selectedURL.flatMap { url in results.firstIndex(where: { $0.url == url }) } ?? (offset > 0 ? -1 : 0)
+        selectedURL = results[(current + offset + results.count) % results.count].url
     }
 }
 

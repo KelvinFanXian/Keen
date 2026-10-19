@@ -37,6 +37,8 @@ final class WorkspaceStore: ObservableObject {
     @Published private(set) var canNavigateBack = false
     @Published private(set) var canNavigateForward = false
     @Published var showFindBar = false
+    @Published var workspaceFindRequest = UUID()
+    var workspaceFindQuery = ""
     @Published private(set) var findFocusRequest = UUID()
     @Published private(set) var recentDocuments: [URL] = []
     @Published var showRecentFiles = false
