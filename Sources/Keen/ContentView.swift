@@ -8,55 +8,60 @@ struct ContentView: View {
     @State private var findQuery = ""
     @State private var findCommand = PageFindCommand()
     @State private var findResult = PageFindResult()
-    @State private var explorerWidth: CGFloat = 240
-    @State private var outlineWidth: CGFloat = 180
+    @State private var explorerWidth = UserDefaults.standard.object(forKey: "explorerSidebarWidth") as? Double ?? 240
+    @State private var outlineWidth = UserDefaults.standard.object(forKey: "outlineSidebarWidth") as? Double ?? 180
     @State private var explorerDragStart: CGFloat?
     @State private var outlineDragStart: CGFloat?
     @State private var isFullScreen = false
     @FocusState private var findFieldFocused: Bool
 
     var body: some View {
-        HStack(spacing: 0) {
-            if store.showExplorer && !store.focusMode {
-                ExplorerView()
-                    .environmentObject(store)
-                    .frame(width: explorerWidth)
-                    .padding(.top, isFullScreen ? 0 : 36)
-                    .background(Color(red: 0.968, green: 0.970, blue: 0.972))
-                splitDivider {
-                    startExplorerResize($0)
-                } onEnd: {
-                    explorerDragStart = nil
-                }
-            }
-
-            VStack(spacing: 0) {
-                if !isFullScreen {
-                    TabBarView()
+        GeometryReader { geometry in
+            let widths = sidebarWidths(in: geometry.size.width)
+            HStack(spacing: 0) {
+                if store.showExplorer && !store.focusMode {
+                    ExplorerView()
                         .environmentObject(store)
+                        .frame(width: widths.explorer)
+                        .padding(.top, isFullScreen ? 0 : 36)
+                        .background(Color(red: 0.968, green: 0.970, blue: 0.972))
+                    splitDivider {
+                        startExplorerResize($0, from: widths.explorer, available: geometry.size.width - widths.outline - 400 - widths.dividers)
+                    } onEnd: {
+                        explorerDragStart = nil
+                        UserDefaults.standard.set(explorerWidth, forKey: "explorerSidebarWidth")
+                    }
                 }
-                reader
-            }
-            .frame(minWidth: 400, maxWidth: .infinity)
 
-            if store.showOutline && !store.focusMode {
-                splitDivider {
-                    startOutlineResize($0)
-                } onEnd: {
-                    outlineDragStart = nil
-                }
                 VStack(spacing: 0) {
                     if !isFullScreen {
-                        HeaderControls()
+                        TabBarView()
                             .environmentObject(store)
                     }
-                    OutlineView()
-                        .environmentObject(store)
+                    reader
                 }
-                .frame(width: outlineWidth)
+                .frame(minWidth: 400, maxWidth: .infinity)
+
+                if store.showOutline && !store.focusMode {
+                    splitDivider {
+                        startOutlineResize($0, from: widths.outline, available: geometry.size.width - widths.explorer - 400 - widths.dividers)
+                    } onEnd: {
+                        outlineDragStart = nil
+                        UserDefaults.standard.set(outlineWidth, forKey: "outlineSidebarWidth")
+                    }
+                    VStack(spacing: 0) {
+                        if !isFullScreen {
+                            HeaderControls()
+                                .environmentObject(store)
+                        }
+                        OutlineView()
+                            .environmentObject(store)
+                    }
+                    .frame(width: widths.outline)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(edges: .top)
         .background(WindowAppearance(isFullScreen: $isFullScreen, store: store))
         .navigationTitle(store.selectedDocument?.title ?? "Keen")
@@ -121,29 +126,51 @@ struct ContentView: View {
         onDrag: @escaping (CGFloat) -> Void,
         onEnd: @escaping () -> Void
     ) -> some View {
-        Rectangle()
-            .fill(Color(nsColor: .separatorColor))
-            .frame(width: 1)
+        Color.clear
+            .frame(width: 8)
             .overlay {
-                Color.clear
-                    .frame(width: 9)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 1)
-                            .onChanged { onDrag($0.translation.width) }
-                            .onEnded { _ in onEnd() }
-                    )
+                Rectangle()
+                    .fill(Color(nsColor: .separatorColor))
+                    .frame(width: 1)
+                    .allowsHitTesting(false)
             }
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering { NSCursor.resizeLeftRight.set() }
+                else { NSCursor.arrow.set() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { onDrag($0.translation.width) }
+                    .onEnded { _ in onEnd() }
+            )
     }
 
-    private func startExplorerResize(_ translation: CGFloat) {
-        if explorerDragStart == nil { explorerDragStart = explorerWidth }
-        explorerWidth = min(500, max(180, (explorerDragStart ?? explorerWidth) + translation))
+    private func sidebarWidths(in totalWidth: CGFloat) -> (explorer: CGFloat, outline: CGFloat, dividers: CGFloat) {
+        let hasExplorer = store.showExplorer && !store.focusMode
+        let hasOutline = store.showOutline && !store.focusMode
+        let dividers = CGFloat((hasExplorer ? 1 : 0) + (hasOutline ? 1 : 0)) * 8
+        var explorer = hasExplorer ? max(180, CGFloat(explorerWidth)) : 0
+        var outline = hasOutline ? max(140, CGFloat(outlineWidth)) : 0
+        let excess = max(0, explorer + outline + dividers + 400 - totalWidth)
+        let explorerFlex = hasExplorer ? explorer - 180 : 0
+        let outlineFlex = hasOutline ? outline - 140 : 0
+        let flex = explorerFlex + outlineFlex
+        if flex > 0 {
+            explorer -= min(excess, flex) * explorerFlex / flex
+            outline -= min(excess, flex) * outlineFlex / flex
+        }
+        return (explorer, outline, dividers)
     }
 
-    private func startOutlineResize(_ translation: CGFloat) {
-        if outlineDragStart == nil { outlineDragStart = outlineWidth }
-        outlineWidth = min(600, max(140, (outlineDragStart ?? outlineWidth) - translation))
+    private func startExplorerResize(_ translation: CGFloat, from currentWidth: CGFloat, available: CGFloat) {
+        if explorerDragStart == nil { explorerDragStart = currentWidth }
+        explorerWidth = Double(min(max(180, available), max(180, (explorerDragStart ?? currentWidth) + translation)))
+    }
+
+    private func startOutlineResize(_ translation: CGFloat, from currentWidth: CGFloat, available: CGFloat) {
+        if outlineDragStart == nil { outlineDragStart = currentWidth }
+        outlineWidth = Double(min(max(140, available), max(140, (outlineDragStart ?? currentWidth) - translation)))
     }
 
     @ViewBuilder
