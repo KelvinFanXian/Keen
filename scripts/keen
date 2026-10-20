@@ -1,0 +1,22 @@
+#!/bin/zsh
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+    print -u2 '用法：keen <目录路径>'
+    exit 64
+fi
+
+directory="${1:A}"
+if [[ ! -d "$directory" ]]; then
+    print -u2 "目录不存在：$1"
+    exit 66
+fi
+
+app_path="${KEEN_APP_PATH:-/Applications/Keen.app}"
+if [[ ! -d "$app_path" ]]; then
+    print -u2 "未找到 Keen.app：$app_path"
+    exit 69
+fi
+
+encoded_path="$(LC_ALL=C printf '%s' "$directory" | /usr/bin/od -An -tx1 -v | /usr/bin/tr -d ' \n' | /usr/bin/sed 's/../%&/g')"
+/usr/bin/open -a "$app_path" "keen://open?path=$encoded_path"

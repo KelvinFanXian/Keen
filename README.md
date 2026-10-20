@@ -44,6 +44,18 @@ make run     # 构建并启动
 
 生成的应用位于 `.build/app/Keen.app`。未配置 Apple Development 证书时，脚本使用 ad-hoc 签名，适合本机运行。
 
+## 命令行打开工作区
+
+将构建好的应用安装为 `/Applications/Keen.app`，再把仓库中的命令行入口加入 PATH：
+
+```bash
+ln -s "$(pwd)/scripts/keen" "$HOME/.local/bin/keen"
+keen .                 # 打开当前目录
+keen /path/to/project  # 打开指定目录
+```
+
+命令支持相对路径、绝对路径和带空格的路径；应用已经运行时会切换到指定工作区。若应用安装在别处，可设置 `KEEN_APP_PATH` 指向对应的 `.app`。命令只打开目录，不修改其中的文件。
+
 ## 快捷键
 
 | 操作 | 快捷键 |

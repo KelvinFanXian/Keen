@@ -91,7 +91,9 @@ struct ContentView: View {
             }
         }
         .onOpenURL { url in
-            if let target = DocumentLinkResolver.resolve(url) {
+            if let directory = KeenLaunchURL.directory(from: url) {
+                store.openFolder(directory)
+            } else if let target = DocumentLinkResolver.resolve(url) {
                 store.openFile(target.fileURL, headingID: target.headingID)
             } else {
                 store.openFile(url)
