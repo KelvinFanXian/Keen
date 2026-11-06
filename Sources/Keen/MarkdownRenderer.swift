@@ -208,7 +208,9 @@ struct MarkdownRenderer {
         stage.style.width = `${naturalWidth}px`;
         stage.style.height = `${naturalHeight}px`;
         stage.dataset.scale = Math.min(1, (viewport.clientWidth - 8) / naturalWidth).toFixed(3);
-        stage.dataset.x = '0'; stage.dataset.y = '0';
+        const scaledWidth = naturalWidth * Number(stage.dataset.scale);
+        stage.dataset.x = Math.max(0, (viewport.clientWidth - scaledWidth) / 2).toFixed(1);
+        stage.dataset.y = '0';
         applyTransform(shell);
       };
       window.keenMermaidZoom = (button, factor) => {

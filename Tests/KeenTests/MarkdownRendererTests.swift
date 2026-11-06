@@ -181,6 +181,7 @@ func webViewLoadsRemoteImage() async throws {
     #expect(diagram.html.contains("keenMermaidZoom"))
     #expect(diagram.html.contains("svg.viewBox?.baseVal"))
     #expect(diagram.html.contains("Math.min(1, (viewport.clientWidth - 8) / naturalWidth)"))
+    #expect(diagram.html.contains("(viewport.clientWidth - scaledWidth) / 2"))
 }
 
 @Test func resolvesMarkdownLinksAndAnchors() throws {
