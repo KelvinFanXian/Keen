@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var explorerDragStart: CGFloat?
     @State private var outlineDragStart: CGFloat?
     @State private var isFullScreen = false
+    @State private var windowFrameBeforeFill: NSRect?
     @FocusState private var findFieldFocused: Bool
 
     var body: some View {
@@ -25,6 +26,15 @@ struct ContentView: View {
                         .frame(width: widths.explorer)
                         .padding(.top, isFullScreen ? 0 : 36)
                         .background(Color(red: 0.968, green: 0.970, blue: 0.972))
+                        .overlay(alignment: .top) {
+                            if !isFullScreen {
+                                HStack(spacing: 0) {
+                                    Color.clear.frame(width: 90).allowsHitTesting(false)
+                                    TitlebarDragArea(onDoubleClick: toggleWindowFill)
+                                }
+                                .frame(height: 36)
+                            }
+                        }
                     splitDivider {
                         startExplorerResize($0, from: widths.explorer, available: geometry.size.width - widths.outline - 400 - widths.dividers)
                     } onEnd: {
@@ -35,7 +45,7 @@ struct ContentView: View {
 
                 VStack(spacing: 0) {
                     if !isFullScreen {
-                        TabBarView()
+                        TabBarView(onDoubleClickTitlebar: toggleWindowFill)
                             .environmentObject(store)
                     }
                     reader
@@ -51,7 +61,7 @@ struct ContentView: View {
                     }
                     VStack(spacing: 0) {
                         if !isFullScreen {
-                            HeaderControls()
+                            HeaderControls(onDoubleClickTitlebar: toggleWindowFill)
                                 .environmentObject(store)
                         }
                         OutlineView()
@@ -68,6 +78,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { notification in
             guard let window = notification.object as? NSWindow, window == NSApp.keyWindow else { return }
             isFullScreen = true
+            windowFrameBeforeFill = nil
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { notification in
             guard let window = notification.object as? NSWindow, window == NSApp.keyWindow else { return }
@@ -126,6 +137,19 @@ struct ContentView: View {
         .sheet(isPresented: $store.showWorkspaceSearch) {
             WorkspaceFileSearchView()
                 .environmentObject(store)
+        }
+    }
+
+    private func toggleWindowFill() {
+        guard let window = NSApp.keyWindow,
+              !window.styleMask.contains(.fullScreen),
+              let screen = window.screen else { return }
+        if let previousFrame = windowFrameBeforeFill {
+            windowFrameBeforeFill = nil
+            window.setFrame(previousFrame, display: true, animate: true)
+        } else {
+            windowFrameBeforeFill = window.frame
+            window.setFrame(screen.visibleFrame, display: true, animate: true)
         }
     }
 
@@ -686,6 +710,7 @@ private struct PageFindBar: View {
 
 private struct TabBarView: View {
     @EnvironmentObject private var store: WorkspaceStore
+    let onDoubleClickTitlebar: () -> Void
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -729,9 +754,7 @@ private struct TabBarView: View {
                     }
                     .padding(.horizontal, 8)
                 }
-                Spacer(minLength: 0)
-                    .contentShape(Rectangle())
-                    .gesture(WindowDragGesture())
+                TitlebarDragArea(onDoubleClick: onDoubleClickTitlebar)
                 if !store.showOutline || store.focusMode {
                     HeaderControlsButtons()
                         .environmentObject(store)
@@ -754,15 +777,28 @@ private struct TabBarView: View {
 
 private struct HeaderControls: View {
     @EnvironmentObject private var store: WorkspaceStore
+    let onDoubleClickTitlebar: () -> Void
 
     var body: some View {
         HStack(spacing: 4) {
-            Spacer(minLength: 0)
+            TitlebarDragArea(onDoubleClick: onDoubleClickTitlebar)
             HeaderControlsButtons()
                 .environmentObject(store)
         }
         .frame(height: 36)
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+}
+
+private struct TitlebarDragArea: View {
+    let onDoubleClick: () -> Void
+
+    var body: some View {
+        Color.clear
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(WindowDragGesture())
+            .simultaneousGesture(TapGesture(count: 2).onEnded { onDoubleClick() })
     }
 }
 
