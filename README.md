@@ -99,7 +99,8 @@ docs/TEST_REPORT.md    已执行的功能测试与手工验收清单
 docs/PERFORMANCE.md    性能目标、口径与实测记录
 docs/KNOWN_ISSUES.md   当前限制和待解决问题
 docs/UI_WALK.md        真实界面走查记录与视觉回归项
-CLAUDE.md              分支、提交、推送与署名规则
+AGENTS.md              通用的分支、提交、推送与署名规则
+CLAUDE.md              指向通用规则，兼容 Claude
 ```
 
 ## 产品边界
