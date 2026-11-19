@@ -123,10 +123,15 @@ struct MarkdownRenderer {
         document.addEventListener('click',event=>{
           const link=event.target.closest('a[href]');
           const href=link?.getAttribute('href');
-          if(!href?.startsWith('#')) return;
-          event.preventDefault();
-          const id=window.keenScrollTo(decodeAnchor(href.slice(1)));
-          if(id) bridge?.postMessage({type:'heading',id});
+          if(!href) return;
+          if(href.startsWith('#')){
+            event.preventDefault();
+            const id=window.keenScrollTo(decodeAnchor(href.slice(1)));
+            if(id) bridge?.postMessage({type:'heading',id});
+          } else if(!href.startsWith('//') && !/^[a-z][a-z0-9+.-]*:/i.test(href)){
+            event.preventDefault();
+            bridge?.postMessage({type:'localLink',href,scrollY:window.scrollY});
+          }
         });
         let vimEnabled=false;
         let pendingGAt=0;

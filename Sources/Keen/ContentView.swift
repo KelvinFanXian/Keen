@@ -726,6 +726,10 @@ private struct TabBarView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .focusEffectDisabled()
+                                .simultaneousGesture(TapGesture(count: 2).onEnded {
+                                    store.select(document)
+                                    store.pin(document)
+                                })
 
                                 Button { store.close(document) } label: {
                                     Image(systemName: "xmark")

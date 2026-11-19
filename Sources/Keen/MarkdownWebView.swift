@@ -135,6 +135,26 @@ struct MarkdownWebView: NSViewRepresentable {
                 guard !isLoading else { return }
                 guard let y = object["y"] as? Double else { return }
                 onScrollPositionChanged(sourceURL, y)
+            case "localLink":
+                guard let href = object["href"] as? String else { return }
+                if let target = DocumentLinkResolver.resolve(href, relativeTo: sourceURL) {
+                    if target.fileURL.standardizedFileURL == sourceURL.standardizedFileURL,
+                       let headingID = target.headingID {
+                        webView?.evaluateJavaScript(Self.scrollScript(for: headingID)) { [weak self] value, _ in
+                            guard let id = value as? String else { return }
+                            self?.selectedHeadingID = id
+                            self?.lastRequestedHeading = id
+                        }
+                    } else {
+                        if let scrollY = object["scrollY"] as? Double {
+                            onScrollPositionChanged(sourceURL, scrollY)
+                        }
+                        openLocalMarkdown(target.fileURL, target.headingID)
+                    }
+                } else if let url = URL(string: href, relativeTo: sourceURL.deletingLastPathComponent())?.absoluteURL,
+                          url.isFileURL, FileManager.default.fileExists(atPath: url.path) {
+                    NSWorkspace.shared.open(url)
+                }
             case "find":
                 onFindRequested()
             case "vim":

@@ -169,6 +169,40 @@ func webViewLoadsRemoteImage() async throws {
     #expect(width > 0)
 }
 
+private final class LocalLinkMessageRecorder: NSObject, WKScriptMessageHandler {
+    var message: [String: Any]?
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        self.message = message.body as? [String: Any]
+    }
+}
+
+@MainActor
+@Test(.enabled(if: ProcessInfo.processInfo.environment["KEEN_WEBKIT_INTEGRATION"] == "1"))
+func webViewPostsRelativeMarkdownLinkClick() async throws {
+    let recorder = LocalLinkMessageRecorder()
+    let configuration = WKWebViewConfiguration()
+    configuration.userContentController.add(recorder, name: "keen")
+    let webView = WKWebView(frame: .init(x: 0, y: 0, width: 300, height: 200), configuration: configuration)
+    let directory = FileManager.default.temporaryDirectory
+    let destination = "../release/云表低代码平台快照迁移范围与冗余裁剪.md"
+    let rendered = MarkdownRenderer().render(source: "[快照迁移](\(destination))", baseURL: directory)
+    webView.loadHTMLString(rendered.html, baseURL: directory)
+    var loadedHref: String?
+    for _ in 0..<50 {
+        loadedHref = try? await webView.evaluateJavaScript("document.querySelector('a')?.getAttribute('href')") as? String
+        if loadedHref == destination { break }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(loadedHref == destination)
+    _ = try await webView.evaluateJavaScript("document.querySelector('a')?.click()")
+    for _ in 0..<50 where recorder.message == nil {
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(recorder.message?["type"] as? String == "localLink")
+    #expect(recorder.message?["href"] as? String == destination)
+}
+
 @Test func loadsMermaidOnlyWhenNeeded() {
     let plain = MarkdownRenderer().render(source: "```swift\nprint(1)\n```", baseURL: URL(fileURLWithPath: "/tmp/docs"))
     #expect(!plain.html.contains("globalThis[\"mermaid\"]"))
@@ -203,6 +237,34 @@ func webViewLoadsRemoteImage() async throws {
     #expect(DocumentLinkResolver.resolve(extensionless)?.fileURL == chinese)
 }
 
+@Test func resolvesRelativeChineseMarkdownLinks() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let sourceDirectory = root.appendingPathComponent("云表低代码平台数据与迁移", isDirectory: true)
+    let targetDirectory = root.appendingPathComponent("release", isDirectory: true)
+    let bracketDirectory = root.appendingPathComponent("[pe]模块-生产执行", isDirectory: true)
+    try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: bracketDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let source = sourceDirectory.appendingPathComponent("03-wjuat历史数据迁移方案.md")
+    let target = targetDirectory.appendingPathComponent("云表低代码平台快照迁移范围与冗余裁剪.md")
+    let bracketTarget = bracketDirectory.appendingPathComponent("03-决策记录.md")
+    try Data("# 来源".utf8).write(to: source)
+    try Data("# 目标".utf8).write(to: target)
+    try Data("# 决策".utf8).write(to: bracketTarget)
+
+    let destination = "../release/云表低代码平台快照迁移范围与冗余裁剪.md"
+    #expect(DocumentLinkResolver.resolve(destination, relativeTo: source)?.fileURL == target)
+    let rendered = MarkdownRenderer().render(source: "[快照迁移](\(destination))", baseURL: sourceDirectory)
+    #expect(rendered.html.contains("href=\"\(destination)\""))
+    #expect(rendered.html.contains("type:'localLink',href"))
+    let bracketDestination = "../[pe]模块-生产执行/03-决策记录.md"
+    #expect(DocumentLinkResolver.resolve(bracketDestination, relativeTo: source)?.fileURL == bracketTarget)
+    let bracketRendered = MarkdownRenderer().render(source: "[决策记录](\(bracketDestination))", baseURL: sourceDirectory)
+    #expect(bracketRendered.html.contains("href=\"\(bracketDestination)\""))
+}
+
 @Test func rendersInDocumentAnchorNavigation() {
     let source = """
     [跳转](#阅读体验)
@@ -214,7 +276,7 @@ func webViewLoadsRemoteImage() async throws {
     let result = MarkdownRenderer().render(source: source, baseURL: URL(fileURLWithPath: "/tmp/docs"))
     #expect(result.headings.first?.id == "阅读体验")
     #expect(result.html.contains("href=\"#阅读体验\""))
-    #expect(result.html.contains("href?.startsWith('#')"))
+    #expect(result.html.contains("if(href.startsWith('#'))"))
     #expect(result.html.contains("target.scrollIntoView({behavior:'auto',block:'start'})"))
 }
 

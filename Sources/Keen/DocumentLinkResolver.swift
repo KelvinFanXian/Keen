@@ -6,6 +6,11 @@ struct ResolvedDocumentLink: Equatable {
 }
 
 enum DocumentLinkResolver {
+    static func resolve(_ destination: String, relativeTo sourceURL: URL, fileManager: FileManager = .default) -> ResolvedDocumentLink? {
+        guard let url = URL(string: destination, relativeTo: sourceURL.deletingLastPathComponent())?.absoluteURL else { return nil }
+        return resolve(url, fileManager: fileManager)
+    }
+
     static func resolve(_ url: URL, fileManager: FileManager = .default) -> ResolvedDocumentLink? {
         guard url.isFileURL else { return nil }
 
