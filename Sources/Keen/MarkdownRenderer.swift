@@ -224,7 +224,7 @@ struct MarkdownRenderer {
         stage.dataset.scale = Math.max(.25, Math.min(3, Number(stage.dataset.scale || 1) * factor)).toFixed(3);
         applyTransform(shell);
       };
-      window.keenMermaidFit = button => fit(button.closest('.mermaid-shell'));
+      window.keenMermaidFit = () => shells.forEach(fit);
 
       shells.forEach(shell => {
         const viewport = shell.querySelector('.mermaid-viewport');
@@ -299,7 +299,7 @@ private struct HTMLBuilder {
                 <section class="mermaid-shell">
                   <div class="mermaid-toolbar">
                     <button title="缩小" onclick="keenMermaidZoom(this,0.8)">−</button>
-                    <button title="适应宽度" onclick="keenMermaidFit(this)">适应</button>
+                    <button title="本页所有图适应宽度" onclick="keenMermaidFit()">适应</button>
                     <button title="放大" onclick="keenMermaidZoom(this,1.25)">＋</button>
                   </div>
                   <div class="mermaid-viewport"><div class="mermaid-stage" data-scale="1" data-x="0" data-y="0"><div class="mermaid">\(escape(code.code))</div></div></div>

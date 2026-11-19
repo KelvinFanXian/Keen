@@ -218,6 +218,24 @@ func webViewPostsRelativeMarkdownLinkClick() async throws {
     #expect(diagram.html.contains("(viewport.clientWidth - scaledWidth) / 2"))
 }
 
+@Test func fitsAllMermaidDiagramsInOneDocument() {
+    let source = """
+    ```mermaid
+    flowchart TD
+    A --> B
+    ```
+
+    ```mermaid
+    flowchart LR
+    C --> D
+    ```
+    """
+    let html = MarkdownRenderer().render(source: source, baseURL: URL(fileURLWithPath: "/tmp/docs")).html
+    #expect(html.components(separatedBy: "class=\"mermaid-shell\"").count == 3)
+    #expect(html.contains("window.keenMermaidFit = () => shells.forEach(fit)"))
+    #expect(html.components(separatedBy: "onclick=\"keenMermaidFit()\"").count == 3)
+}
+
 @Test func resolvesMarkdownLinksAndAnchors() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
