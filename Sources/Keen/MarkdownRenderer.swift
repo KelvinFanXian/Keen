@@ -192,12 +192,14 @@ struct MarkdownRenderer {
         startOnLoad: false,
         securityLevel: 'strict',
         theme: 'neutral',
+        look: 'classic',
+        layout: 'elk',
         fontFamily: 'Helvetica Neue, Helvetica, Arial, PingFang SC, sans-serif',
         flowchart: {
           nodeSpacing: 28,
           rankSpacing: 34,
           diagramPadding: 12,
-          curve: 'stepAfter'
+          curve: 'rounded'
         },
         suppressErrorRendering: true,
         maxTextSize: 100000

@@ -39,7 +39,7 @@ KeenApp
 - 链接点击由 `WKNavigationDelegate` 接管；仅 Markdown 本地链接在 Keen 打开，HTTP(S)/mailto 交给系统。
 - WebKit 使用非持久化数据存储。
 - 当前内置 JavaScript 是应用可信资源；文档不能注入脚本。
-- Mermaid 11.17.2 随 App 本地打包，仅在文档包含 `mermaid` 代码块时读入页面，并固定使用 `securityLevel: strict`。
+- Mermaid 12.3.0 随 App 本地打包，仅在文档包含 `mermaid` 代码块时读入页面；流程图使用内置 ELK 布局与圆角连线，并固定使用 `securityLevel: strict`。
 
 ## 当前技术债务
 

@@ -111,4 +111,4 @@ Keen 不提供 Markdown 编辑、AI 对话、Agent 管理、Git 客户端、云�
 
 作者：范显
 
-Mermaid 使用 MIT License，许可证随资源保存在 `Sources/Keen/Resources/vendor/Mermaid-LICENSE`。
+Mermaid 使用 MIT License，许可证保存在 `Sources/Keen/Resources/vendor/Mermaid-LICENSE`。其内置的 ELK 布局引擎使用 EPL-2.0 或 GPL-3.0-or-later 双许可证；本项目随附 `Sources/Keen/Resources/vendor/ELK-LICENSE.md`。
