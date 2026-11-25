@@ -221,6 +221,7 @@ func webViewPostsRelativeMarkdownLinkClick() async throws {
     #expect(diagram.html.contains("wrappingWidth: 280"))
     #expect(diagram.html.contains("minNodeWidth: 240"))
     #expect(diagram.html.contains(".mermaid .nodeLabel { line-break:strict; word-break:normal; }"))
+    #expect(diagram.html.contains(".mermaid .nodeLabel p { display:inline-block; max-width:100%; text-align:left; }"))
     #expect(diagram.html.contains("layout: 'elk'"))
     #expect(diagram.html.contains("curve: 'rounded'"))
     #expect(diagram.html.contains(".mermaid .node rect { rx:12px; ry:12px; }"))
@@ -286,9 +287,13 @@ func webViewFitsMermaidWithoutScalingTheWholeStage() async throws {
           const svg = stage?.querySelector('svg');
           if (!svg) return null;
           if (!stage.dataset.naturalWidth) window.keenMermaidFit();
+          const multiline = [...svg.querySelectorAll('.nodeLabel p')].find(label => label.querySelector('br'));
           return {
             naturalWidth: Number(stage.dataset.naturalWidth),
             nodeCount: svg.querySelectorAll('.node').length,
+            paragraphAlign: multiline && getComputedStyle(multiline).textAlign,
+            blockDisplay: multiline && getComputedStyle(multiline).display,
+            containerAlign: multiline && getComputedStyle(multiline.closest('foreignObject').firstElementChild).textAlign,
             scale: Number(stage.dataset.scale),
             svgWidth: svg.getBoundingClientRect().width,
             stageWidth: stage.getBoundingClientRect().width,
@@ -308,6 +313,9 @@ func webViewFitsMermaidWithoutScalingTheWholeStage() async throws {
     let stageWidth = try #require(result["stageWidth"] as? Double)
     let viewportWidth = try #require(result["viewportWidth"] as? Int)
     #expect(nodeCount == 15)
+    #expect(result["paragraphAlign"] as? String == "left")
+    #expect(result["blockDisplay"] as? String == "inline-block")
+    #expect(result["containerAlign"] as? String == "center")
     #expect(naturalWidth > 0)
     #expect(scale > 0 && scale <= 1)
     #expect(abs(svgWidth - naturalWidth * scale) < 2)
