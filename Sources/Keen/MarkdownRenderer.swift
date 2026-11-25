@@ -54,8 +54,9 @@ struct MarkdownRenderer {
         .mermaid-toolbar button { border:1px solid var(--line); border-radius:5px; background:var(--bg); color:var(--fg); min-width:28px; padding:3px 8px; }
         .mermaid-viewport { min-height:120px; overflow:auto; padding:4px 0 18px; cursor:grab; touch-action:none; }
         .mermaid-viewport.dragging { cursor:grabbing; }
-        .mermaid-stage { width:max-content; min-width:0; transform-origin:0 0; transition:transform .12s ease-out; }
+        .mermaid-stage { width:max-content; min-width:0; transition:transform .12s ease-out,width .12s ease-out,height .12s ease-out; }
         .mermaid-stage svg { display:block; margin:0; max-width:none !important; }
+        .mermaid .node rect { rx:12px; ry:12px; }
         .mermaid-error { padding:14px 16px; color:#b42318; white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
         .table-wrap { width:calc(100vw - 36px); margin:1.35em 0 2em; position:relative; left:50%; transform:translateX(-50%); overflow:auto; background:var(--bg); }
         table { width:auto; min-width:0; max-width:100%; border:1px solid var(--line); border-radius:5px; border-spacing:0; border-collapse:separate; font-size:.96em; line-height:1.42; font-variant-numeric:tabular-nums; color:var(--fg); overflow:hidden; }
@@ -191,27 +192,40 @@ struct MarkdownRenderer {
         startOnLoad: false,
         securityLevel: 'strict',
         theme: 'neutral',
+        fontFamily: 'Helvetica Neue, Helvetica, Arial, PingFang SC, sans-serif',
+        flowchart: {
+          nodeSpacing: 28,
+          rankSpacing: 34,
+          diagramPadding: 12,
+          curve: 'stepAfter'
+        },
         suppressErrorRendering: true,
         maxTextSize: 100000
       });
 
       const applyTransform = shell => {
         const stage = shell.querySelector('.mermaid-stage');
-        stage.style.transform = `translate(${stage.dataset.x || 0}px, ${stage.dataset.y || 0}px) scale(${stage.dataset.scale || 1})`;
+        const svg = stage.querySelector('svg');
+        if (!svg) return;
+        const scale = Number(stage.dataset.scale || 1);
+        const width = Number(stage.dataset.naturalWidth || 1) * scale;
+        const height = Number(stage.dataset.naturalHeight || 1) * scale;
+        svg.style.width = `${width}px`;
+        svg.style.height = `${height}px`;
+        stage.style.width = `${width}px`;
+        stage.style.height = `${height}px`;
+        stage.style.transform = `translate(${stage.dataset.x || 0}px, ${stage.dataset.y || 0}px)`;
       };
       const fit = shell => {
         const viewport = shell.querySelector('.mermaid-viewport');
         const stage = shell.querySelector('.mermaid-stage');
         const svg = stage.querySelector('svg');
         if (!svg) return;
-        stage.style.transform = 'none';
         const box = svg.viewBox?.baseVal;
         const naturalWidth = box?.width || svg.getBoundingClientRect().width || 1;
         const naturalHeight = box?.height || svg.getBoundingClientRect().height || 1;
-        svg.style.width = `${naturalWidth}px`;
-        svg.style.height = `${naturalHeight}px`;
-        stage.style.width = `${naturalWidth}px`;
-        stage.style.height = `${naturalHeight}px`;
+        stage.dataset.naturalWidth = naturalWidth;
+        stage.dataset.naturalHeight = naturalHeight;
         stage.dataset.scale = Math.min(1, (viewport.clientWidth - 8) / naturalWidth).toFixed(3);
         const scaledWidth = naturalWidth * Number(stage.dataset.scale);
         stage.dataset.x = Math.max(0, (viewport.clientWidth - scaledWidth) / 2).toFixed(1);

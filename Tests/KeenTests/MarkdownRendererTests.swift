@@ -216,6 +216,12 @@ func webViewPostsRelativeMarkdownLinkClick() async throws {
     #expect(diagram.html.contains("svg.viewBox?.baseVal"))
     #expect(diagram.html.contains("Math.min(1, (viewport.clientWidth - 8) / naturalWidth)"))
     #expect(diagram.html.contains("(viewport.clientWidth - scaledWidth) / 2"))
+    #expect(diagram.html.contains("nodeSpacing: 28"))
+    #expect(diagram.html.contains("rankSpacing: 34"))
+    #expect(diagram.html.contains("curve: 'stepAfter'"))
+    #expect(diagram.html.contains(".mermaid .node rect { rx:12px; ry:12px; }"))
+    #expect(diagram.html.contains("svg.style.width = `${width}px`"))
+    #expect(!diagram.html.contains("scale(${stage.dataset.scale"))
 }
 
 @Test func fitsAllMermaidDiagramsInOneDocument() {
@@ -234,6 +240,61 @@ func webViewPostsRelativeMarkdownLinkClick() async throws {
     #expect(html.components(separatedBy: "class=\"mermaid-shell\"").count == 3)
     #expect(html.contains("window.keenMermaidFit = () => shells.forEach(fit)"))
     #expect(html.components(separatedBy: "onclick=\"keenMermaidFit()\"").count == 3)
+}
+
+@MainActor
+@Test(.enabled(if: ProcessInfo.processInfo.environment["KEEN_WEBKIT_INTEGRATION"] == "1"))
+func webViewFitsMermaidWithoutScalingTheWholeStage() async throws {
+    let source = """
+    ```mermaid
+    flowchart TD
+    A["基础数据已导入"] --> B["生产主档已入库"]
+    A --> C["组织已建档"]
+    B --> D["标准产能已试迁"]
+    B --> E["手工任务已试迁"]
+    C --> F["人员映射与任职"]
+    D --> G["历史审批与在途处置"]
+    E --> G
+    F --> G
+    ```
+    """
+    let document = MarkdownRenderer().render(source: source, baseURL: FileManager.default.temporaryDirectory)
+    let webView = WKWebView(frame: .init(x: 0, y: 0, width: 640, height: 600))
+    webView.loadHTMLString(document.html, baseURL: FileManager.default.temporaryDirectory)
+
+    var measurements: [String: Any]?
+    for _ in 0..<100 {
+        measurements = try? await webView.evaluateJavaScript("""
+        (() => {
+          const stage = document.querySelector('.mermaid-stage');
+          const svg = stage?.querySelector('svg');
+          if (!svg) return null;
+          if (!stage.dataset.naturalWidth) window.keenMermaidFit();
+          return {
+            naturalWidth: Number(stage.dataset.naturalWidth),
+            scale: Number(stage.dataset.scale),
+            svgWidth: svg.getBoundingClientRect().width,
+            stageWidth: stage.getBoundingClientRect().width,
+            transform: getComputedStyle(stage).transform,
+            viewportWidth: document.querySelector('.mermaid-viewport').clientWidth
+          };
+        })()
+        """) as? [String: Any]
+        if measurements != nil { break }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    let result = try #require(measurements)
+    let naturalWidth = try #require(result["naturalWidth"] as? Double)
+    let scale = try #require(result["scale"] as? Double)
+    let svgWidth = try #require(result["svgWidth"] as? Double)
+    let stageWidth = try #require(result["stageWidth"] as? Double)
+    let viewportWidth = try #require(result["viewportWidth"] as? Int)
+    #expect(naturalWidth > 0)
+    #expect(scale > 0 && scale <= 1)
+    #expect(abs(svgWidth - naturalWidth * scale) < 2)
+    #expect(abs(stageWidth - svgWidth) < 2)
+    #expect(svgWidth <= Double(viewportWidth))
+    #expect((result["transform"] as? String)?.hasPrefix("matrix(1, 0, 0, 1,") == true)
 }
 
 @Test func resolvesMarkdownLinksAndAnchors() throws {
