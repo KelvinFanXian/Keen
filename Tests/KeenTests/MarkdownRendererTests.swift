@@ -218,6 +218,9 @@ func webViewPostsRelativeMarkdownLinkClick() async throws {
     #expect(diagram.html.contains("(viewport.clientWidth - scaledWidth) / 2"))
     #expect(diagram.html.contains("nodeSpacing: 28"))
     #expect(diagram.html.contains("rankSpacing: 34"))
+    #expect(diagram.html.contains("wrappingWidth: 280"))
+    #expect(diagram.html.contains("minNodeWidth: 240"))
+    #expect(diagram.html.contains(".mermaid .nodeLabel { line-break:strict; word-break:normal; }"))
     #expect(diagram.html.contains("layout: 'elk'"))
     #expect(diagram.html.contains("curve: 'rounded'"))
     #expect(diagram.html.contains(".mermaid .node rect { rx:12px; ry:12px; }"))
@@ -249,14 +252,26 @@ func webViewFitsMermaidWithoutScalingTheWholeStage() async throws {
     let source = """
     ```mermaid
     flowchart TD
-    A["基础数据已导入"] --> B["生产主档已入库"]
-    A --> C["组织已建档"]
-    B --> D["标准产能已试迁"]
-    B --> E["手工任务已试迁"]
-    C --> F["人员映射与任职"]
-    D --> G["历史审批与在途处置"]
-    E --> G
-    F --> G
+    A["目标 DDL、菜单、字典<br/>基础已导入，差异待复核"] --> B["产品基础数据已入库<br/>产品 278,531 · 分类 92<br/>单位 40 · 来料供应商 3,151"]
+    A --> C["四川组织已建档<br/>部门 28 · 岗位 36 · 职位 49"]
+    B --> D["质检分类和方案待建<br/>分类 0 · 方案 0"]
+    B --> E["生产主档已入库<br/>车间 15 · 线别 20 · 班组 7"]
+    F["质检抽样标准已入库<br/>105 条"] --> G["来料检验单与报告待迁<br/>检验单 0 · 报告 0"]
+    D --> G
+    E --> H["工段 30、工序 322 已入库<br/>工段工序编排 79 / 630"]
+    H --> I["标准产能已试迁<br/>当前值 5 条 · 来源汇报 3 张"]
+    H --> J["手工任务已试迁 2 张<br/>ERP 任务和历史底数待迁"]
+    C --> K["人员映射与任职<br/>168 人已映射及回填部门<br/>154 人已回填职位"]
+    I --> L["生产汇报累计已离线复算<br/>wjuat 汇报和底数均为 0"]
+    J --> L
+    J --> M["异常联络、工时、维修<br/>三类主单均为 0"]
+    H --> M
+    K --> M
+    K --> N["表单字段与温江审批模板<br/>字段定义 0 · 已部署流程定义 0"]
+    G --> O["历史审批与在途处置待办<br/>wjuat 历史流程及运行实例均为 0"]
+    L --> O
+    M --> O
+    N --> O
     ```
     """
     let document = MarkdownRenderer().render(source: source, baseURL: FileManager.default.temporaryDirectory)
@@ -273,6 +288,7 @@ func webViewFitsMermaidWithoutScalingTheWholeStage() async throws {
           if (!stage.dataset.naturalWidth) window.keenMermaidFit();
           return {
             naturalWidth: Number(stage.dataset.naturalWidth),
+            nodeCount: svg.querySelectorAll('.node').length,
             scale: Number(stage.dataset.scale),
             svgWidth: svg.getBoundingClientRect().width,
             stageWidth: stage.getBoundingClientRect().width,
@@ -286,10 +302,12 @@ func webViewFitsMermaidWithoutScalingTheWholeStage() async throws {
     }
     let result = try #require(measurements)
     let naturalWidth = try #require(result["naturalWidth"] as? Double)
+    let nodeCount = try #require(result["nodeCount"] as? Int)
     let scale = try #require(result["scale"] as? Double)
     let svgWidth = try #require(result["svgWidth"] as? Double)
     let stageWidth = try #require(result["stageWidth"] as? Double)
     let viewportWidth = try #require(result["viewportWidth"] as? Int)
+    #expect(nodeCount == 15)
     #expect(naturalWidth > 0)
     #expect(scale > 0 && scale <= 1)
     #expect(abs(svgWidth - naturalWidth * scale) < 2)

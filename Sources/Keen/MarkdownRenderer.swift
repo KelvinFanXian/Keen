@@ -57,6 +57,7 @@ struct MarkdownRenderer {
         .mermaid-stage { width:max-content; min-width:0; transition:transform .12s ease-out,width .12s ease-out,height .12s ease-out; }
         .mermaid-stage svg { display:block; margin:0; max-width:none !important; }
         .mermaid .node rect { rx:12px; ry:12px; }
+        .mermaid .nodeLabel { line-break:strict; word-break:normal; }
         .mermaid-error { padding:14px 16px; color:#b42318; white-space:pre-wrap; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
         .table-wrap { width:calc(100vw - 36px); margin:1.35em 0 2em; position:relative; left:50%; transform:translateX(-50%); overflow:auto; background:var(--bg); }
         table { width:auto; min-width:0; max-width:100%; border:1px solid var(--line); border-radius:5px; border-spacing:0; border-collapse:separate; font-size:.96em; line-height:1.42; font-variant-numeric:tabular-nums; color:var(--fg); overflow:hidden; }
@@ -199,6 +200,8 @@ struct MarkdownRenderer {
           nodeSpacing: 28,
           rankSpacing: 34,
           diagramPadding: 12,
+          wrappingWidth: 280,
+          minNodeWidth: 240,
           curve: 'rounded'
         },
         suppressErrorRendering: true,
